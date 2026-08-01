@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ProviderError, scrapeFirecrawl, searchTavily } from "./tools";
+import { mergeCorpora, ProviderError, scrapeFirecrawl, searchTavily } from "./tools";
 
 describe("provider normalization", () => {
   it("creates Tavily source and evidence records without leaking raw fields", async () => {
@@ -61,6 +61,76 @@ describe("provider normalization", () => {
 
     expect(corpus.sources[0].url).toBe("https://acme.example");
     expect(corpus.evidence[0].excerpt).toContain("automates security operations");
+  });
+
+  it("rejects generic hiring pages before they become evidence", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        results: [
+          {
+            title: "Careers at Acme",
+            url: "https://acme.example/careers",
+            content: "Explore opportunities and join our team.",
+          },
+          {
+            title: "Security Engineer",
+            url: "https://acme.example/careers/security-engineer-123",
+            content: "Acme is hiring a Security Engineer for its cloud security team.",
+          },
+        ],
+      }),
+    );
+
+    const corpus = await searchTavily(
+      { query: "Acme security jobs", idPrefix: "HIR1", sourceType: "hiring" },
+      { apiKey: "test-key", fetchImpl },
+    );
+
+    expect(corpus.sources).toHaveLength(1);
+    expect(corpus.sources[0].title).toBe("Security Engineer");
+    expect(corpus.sources[0].url).toBe("https://acme.example/careers/security-engineer-123");
+  });
+
+  it("deduplicates canonical URLs and repeated excerpts across corpora", () => {
+    const collectedAt = "2026-08-01T09:00:00.000Z";
+    const corpus = mergeCorpora([
+      {
+        sources: [{
+          id: "A-S1",
+          title: "Acme announcement",
+          url: "https://www.news.example/acme?utm_source=test",
+          publisher: "news.example",
+          sourceType: "news",
+          publishedAt: null,
+        }],
+        evidence: [{
+          id: "A-E1",
+          sourceId: "A-S1",
+          excerpt: "Acme announced a security automation product.",
+          collectedAt,
+        }],
+      },
+      {
+        sources: [{
+          id: "B-S1",
+          title: "Acme announcement copy",
+          url: "https://news.example/acme#summary",
+          publisher: "news.example",
+          sourceType: "news",
+          publishedAt: null,
+        }],
+        evidence: [{
+          id: "B-E1",
+          sourceId: "B-S1",
+          excerpt: "Acme announced a security automation product.",
+          collectedAt,
+        }],
+      },
+    ]);
+
+    expect(corpus.sources).toHaveLength(1);
+    expect(corpus.evidence).toHaveLength(1);
+    expect(corpus.sources[0].url).toBe("https://news.example/acme");
   });
 
   it("turns provider status failures into sanitized errors", async () => {

@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { logBackend } from "@/lib/logger";
 import { resolveCompanyName, normalizeCompanyNames } from "@/lib/resolution";
 import { ResolveRequestSchema, ResolveResponseSchema } from "@/lib/schemas";
-import { publicErrorMessage } from "@/lib/tools";
+import { assertResolutionEnvironment, publicErrorMessage } from "@/lib/tools";
 
 export async function POST(request: Request) {
   const batchId = randomUUID();
@@ -11,6 +11,7 @@ export async function POST(request: Request) {
   try {
     const body = ResolveRequestSchema.parse(await request.json());
     const companies = normalizeCompanyNames(body.companies);
+    assertResolutionEnvironment();
     logBackend({
       level: "info",
       event: "resolution_batch_started",

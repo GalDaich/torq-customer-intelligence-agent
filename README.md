@@ -11,12 +11,12 @@ The implementation is complete through deterministic tests, production build, br
 3. Uses a strict LLM normalization step to turn raw page titles such as `Join monday.com` into a clean grounded identity such as `monday.com`.
 4. Continues automatically for a single match and requires human selection only when multiple plausible matches remain.
 5. Runs one independent LangGraph execution per selected company.
-6. Collects first-party, recent, hiring, and security evidence.
-7. Uses an LLM to classify evidence and synthesize the final report.
-8. Deterministically rejects unsupported evidence references.
+6. Collects first-party, recent, hiring, and security evidence while rejecting generic index and careers pages.
+7. Uses an LLM to classify evidence and passes only node-selected lineage into final synthesis.
+8. Deterministically rejects unsupported, uncited, generic, and duplicate evidence, including the same job repeated across sources.
 9. Returns successful company reports even when another company fails.
 10. Streams real graph-stage progress to the browser and records a timestamped run log.
-11. Presents completed reports as a company launchpad and opens each full report in its own company-named browser tab.
+11. Presents completed reports as a company launchpad and opens each full report in its own company-named browser tab with a single-open category stack.
 
 ## Local prerequisites
 
@@ -43,8 +43,8 @@ Secrets belong only in `.env.local`. That file is ignored by Git. No environment
 | `OPENAI_API_KEY` | Yes | Authenticates identity normalization, evidence classification, and report synthesis. |
 | `OPENAI_MODEL` | Yes | Exact OpenAI model ID to use for strict structured output. |
 | `TAVILY_API_KEY` | Yes | Company resolution and focused public-signal searches. |
-| `FIRECRAWL_API_KEY` | Yes | Targeted official website, product, and careers-page scraping. |
-| `LANGSMITH_TRACING` | Yes; must be `true` | Enables trace creation for every company graph invocation. |
+| `FIRECRAWL_API_KEY` | Yes | Targeted official website and product-page scraping. |
+| `LANGSMITH_TRACING` | Yes; must be `true` | Enables trace creation for identity normalization and every company graph invocation. |
 | `LANGSMITH_API_KEY` | Yes | Authenticates LangSmith tracing. |
 | `LANGSMITH_PROJECT` | Yes | Project used to group and find research traces. This build uses `torq-customer-intelligence-agent`. |
 | `LANGSMITH_ENDPOINT` | Yes | LangSmith API base URL for the workspace region; use `https://eu.api.smith.langchain.com` for an EU workspace. |
@@ -73,9 +73,11 @@ hiringSignals ─────┼─> synthesizeReport -> validateReport
 securitySignals ───┘
 ```
 
-The four research nodes run in parallel. They use fixed search patterns or fixed first-party page targets; the LLM cannot author queries. Their typed outputs converge at synthesis. The final validation node has no LLM.
+The four research nodes run in parallel. They use fixed search patterns or fixed first-party page targets; the LLM cannot author queries. Each node passes only the evidence IDs selected in its typed output into synthesis, so omitted raw search results cannot be reintroduced later. The final validation node has no LLM.
 
-Before selection or automatic continuation, discovery candidates pass through one strict structured-output identity-normalization call. The model can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities.
+Every LLM instruction lives in its own editable TypeScript module under `prompts/`. The graph and normalization code contain no inline system or user prompts.
+
+Before selection or automatic continuation, discovery candidates pass through one strict structured-output identity-normalization call. The model can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities. This pre-graph call has its own `normalize_company_identity` LangSmith run, normalization tags, and the same `research:<researchId>` correlation tag used by the later graph.
 
 For every company, `researchId` is preserved through resolution, selection, graph state, progress events, backend logs, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
 
@@ -99,7 +101,9 @@ Every rendered report claim must satisfy:
 claim -> evidence ID -> source ID -> real clickable URL
 ```
 
-The LLM receives bounded sources and evidence but can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. `validateGroundedReport` checks strict Zod contracts, unique IDs, evidence-to-source integrity, and every claim citation. Invalid output is rejected; no deterministic fallback report is manufactured.
+Retrieval removes generic careers, jobs, newsroom, and index pages where they cannot support a specific finding. Corpus merging canonicalizes URLs and removes repeated excerpts. After classification, only node-selected evidence proceeds to synthesis; after synthesis, only cited lineage proceeds to validation and the UI.
+
+The LLM can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. `validateGroundedReport` checks strict Zod contracts, unique canonical URLs and excerpts, evidence-to-source integrity, complete citation coverage, one strongest source per hiring role, and duplicate job identities. Invalid output is rejected; no deterministic fallback report is manufactured.
 
 ## LangSmith verification
 
@@ -108,7 +112,8 @@ After a real run:
 1. Open the project named by `LANGSMITH_PROJECT`.
 2. Filter for the `customer-intelligence` tag.
 3. Search a visible report UUID with `research:<researchId>`.
-4. Confirm each submitted company has a separate graph trace and matching metadata for company name and domain.
+4. Confirm the pre-graph `normalize_company_identity` run has the `identity-normalization` tag and matching research metadata.
+5. Confirm each submitted company has a separate graph trace and matching metadata for company name and domain.
 
 Five submitted companies should create five UUIDs and five independently searchable executions. The batch request itself is not a graph invocation.
 
@@ -123,6 +128,9 @@ Once all credentials are populated, verify:
 - A company with weak public evidence shows gaps rather than invented certainty.
 - Invalid Tavily, Firecrawl, OpenAI, and LangSmith credentials produce honest failure states.
 - Every source badge opens its corresponding public URL.
+- Duplicate versions of the same job appear once and cite one strongest item-specific source.
+- Generic careers and index pages never appear as report evidence.
+- Report categories start closed and opening one closes the previously open category.
 
 Only after this live run passes should `sample-report.md` be replaced with the actual output and deployment be considered.
 
@@ -130,7 +138,7 @@ Only after this live run passes should `sample-report.md` be replaced with the a
 
 - No persistence, authentication, watchlist, scheduling, or change detection.
 - Human resolution state is held in the browser and is lost on refresh.
-- Fixed `/products` and `/careers` first-party paths will not exist for every company; those misses appear as gaps.
+- The fixed `/products` first-party path will not exist for every company; that miss appears as a gap.
 - Research uses one long-lived HTTP request per batch and streams newline-delimited progress events while it runs.
 - Browser activity history is held only for the current flow, and backend JSON logs go only to the current server log destination; persistence and centralized log aggregation are deferred.
 - Provider rate limits and latency affect one-to-five company batches.

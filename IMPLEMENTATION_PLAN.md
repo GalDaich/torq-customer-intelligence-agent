@@ -5,14 +5,15 @@
 Completed locally:
 
 - Next.js App Router TypeScript application and server-only environment contract.
-- Strict Zod schemas and deterministic claim-to-evidence-to-source validation.
+- Strict Zod schemas and deterministic claim-to-evidence-to-source validation, including generic-source and duplicate-job rejection.
 - Tavily and Firecrawl normalization wrappers.
 - Four parallel research nodes, LLM synthesis, and deterministic final validation.
-- Per-company UUID, LangGraph `thread_id`, LangSmith metadata, and trace tag propagation.
+- Per-company UUID, LangGraph `thread_id`, LangSmith metadata, graph trace tags, and pre-graph identity-normalization tracing.
 - Tavily-backed name/domain resolution, strict LLM identity normalization, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
 - LangGraph task-event streaming with an event-driven progress bar and browser activity log.
 - Correlated structured JSON logs across resolution, batch, graph-stage, and provider boundaries.
-- Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, source badges, and visible gaps.
+- Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, single-open report accordions, source badges, and visible gaps.
+- Dedicated root `prompts/` modules for every LLM operation; no runtime prompt remains inline with orchestration code.
 - Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
 
 Pending before the local milestone can be called complete:
@@ -154,15 +155,25 @@ components/
   research-progress.tsx
   research-workspace.tsx
   company-report.tsx
+  report-launchpad.tsx
 
 lib/
   company-normalization.ts
+  evidence-quality.ts
   schemas.ts
   logger.ts
   research-stream.ts
   tools.ts
-  prompts.ts
   graph.ts
+
+prompts/
+  company-identity-normalization.ts
+  first-party-context.ts
+  recent-signals.ts
+  hiring-signals.ts
+  security-signals.ts
+  report-synthesis.ts
+  shared.ts
 ```
 
 Files should be added only when they hold a distinct responsibility. Avoid creating generic `utils`, `services`, or abstraction layers without a concrete use.
@@ -479,7 +490,7 @@ The research nodes should be parallelizable because they are independent evidenc
 #### `firstPartyContext`
 
 - Tool: Firecrawl scrape.
-- Target: selected official website and, when available, relevant product or careers page.
+- Target: selected official website and, when available, a relevant product page.
 - Extract plain-language company description and products.
 - Preserve source and evidence lineage.
 
@@ -500,7 +511,8 @@ The research nodes should be parallelizable because they are independent evidenc
 "{company}" engineering hiring security team
 ```
 
-- Distinguish actual open roles from generic careers pages.
+- Accept only specific open roles or item-specific hiring articles; reject generic careers and jobs indexes.
+- Consolidate the same position across employer, ATS, LinkedIn, Indeed, and other republished listings, retaining one strongest source.
 - Treat missing dates as unknown rather than inventing them.
 
 #### `securitySignals`
@@ -539,13 +551,16 @@ The research nodes should be parallelizable because they are independent evidenc
 These rules must be enforced in code and prompts:
 
 1. Search and scraping code creates `Source` and `Evidence` records.
-2. LLM prompts receive only bounded evidence records.
+2. LLM prompts receive only bounded evidence records, and synthesis receives only evidence selected by typed research-node output.
 3. LLM outputs reference existing `evidenceIds`.
 4. The LLM cannot create URLs or source records.
 5. Every final claim requires at least one evidence ID.
 6. Pain points and talking points are explicitly treated as evidence-backed inferences.
 7. If there is not enough evidence, the output contains a gap instead of a claim.
-8. The final report includes the complete source list needed by the UI.
+8. Generic careers, jobs, news, and index pages cannot support item-specific findings.
+9. The same job or event cannot be counted repeatedly because multiple sites republished it.
+10. Hiring roles cite exactly one strongest item-specific evidence record.
+11. The final report retains only cited evidence and the source list needed by the UI.
 
 ## UUID and LangSmith tracing
 
@@ -554,6 +569,7 @@ Generate each `researchId` with `crypto.randomUUID()`.
 The same ID is used in:
 
 - Company resolution state.
+- Identity-normalization LangSmith metadata and `research:<researchId>` tag.
 - Selected company payload.
 - LangGraph state.
 - LangGraph `thread_id`.
@@ -668,6 +684,7 @@ The implemented progress view uses LangGraph's task stream as its only source of
 - Logs must not include secrets, authorization headers, raw provider payloads, evidence excerpts, prompts, or generated report content.
 - Browser logs and server logs are ephemeral in Level 1. Persistent or centralized logging remains deferred.
 - LangSmith is the detailed graph/model trace destination and uses the same per-company `researchId`.
+- Pre-graph identity normalization is a separate named LangSmith model run because canonical identity is required before the research graph can start.
 
 ## Torq-inspired styling
 
@@ -693,6 +710,7 @@ Style direction:
 - Thin borders.
 - Clear status treatments.
 - Evidence and uncertainty visibly separated from assertions.
+- Report categories rendered as a compact accordion stack with at most one open panel.
 
 Use a system-safe sans font stack unless an approved Torq font asset becomes available.
 

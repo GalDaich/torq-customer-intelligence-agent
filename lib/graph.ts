@@ -7,15 +7,17 @@ import {
   type GraphNode,
 } from "@langchain/langgraph";
 import { z } from "zod";
-import { validateGroundedReport } from "./grounding";
-import { logBackend } from "./logger";
+import { firstPartyMessages } from "../prompts/first-party-context";
+import { hiringSignalMessages } from "../prompts/hiring-signals";
+import { recentSignalMessages } from "../prompts/recent-signals";
+import { synthesisMessages } from "../prompts/report-synthesis";
+import { securitySignalMessages } from "../prompts/security-signals";
 import {
-  firstPartyMessages,
-  hiringSignalMessages,
-  recentSignalMessages,
-  securitySignalMessages,
-  synthesisMessages,
-} from "./prompts";
+  retainEvidenceForClaims,
+  retainStrongHiringEvidence,
+} from "./evidence-quality";
+import { retainCitedLineage, validateGroundedReport } from "./grounding";
+import { logBackend } from "./logger";
 import {
   CompanyReportSchema,
   EvidenceSchema,
@@ -108,7 +110,7 @@ const STAGE_MESSAGES: Record<
   { started: string; completed: string; failed: string }
 > = {
   firstPartyContext: {
-    started: "Scraping and classifying official company, product, and careers pages.",
+    started: "Scraping and classifying official company and product pages.",
     completed: "First-party research completed.",
     failed: "First-party research failed.",
   },
@@ -231,7 +233,6 @@ async function scrapeFirstParty(company: ResolvedCompany, researchId: string): P
   const targets = [
     { url: company.websiteUrl, label: "official website", sourceType: "company" as const },
     { url: new URL("/products", origin).toString(), label: "product page", sourceType: "company" as const },
-    { url: new URL("/careers", origin).toString(), label: "careers page", sourceType: "hiring" as const },
   ];
   const settled = await Promise.allSettled(
     targets.map((target, index) =>
@@ -318,10 +319,18 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
       state.company.name,
       () => extraction.invoke(firstPartyMessages(state.company, corpus)),
     );
-    return { firstPartyCorpus: corpus, firstPartyResult: firstPartyContext, firstPartyGaps: gaps };
+    const selectedCorpus = retainEvidenceForClaims(
+      corpus,
+      [firstPartyContext.whatTheyDo, ...firstPartyContext.products],
+    );
+    return {
+      firstPartyCorpus: selectedCorpus,
+      firstPartyResult: firstPartyContext,
+      firstPartyGaps: gaps,
+    };
   } catch {
     return {
-      firstPartyCorpus: corpus,
+      firstPartyCorpus: { sources: [], evidence: [] },
       firstPartyGaps: [...gaps, "First-party evidence extraction failed; no finding was substituted."],
     };
   }
@@ -359,10 +368,17 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       company.name,
       () => extraction.invoke(recentSignalMessages(company, corpus)),
     );
-    return { recentCorpus: corpus, recentResult: { ...recentSignals, gaps: [...gaps, ...recentSignals.gaps] } };
+    const selectedCorpus = retainEvidenceForClaims(
+      corpus,
+      recentSignals.signals.map((signal) => signal.claim),
+    );
+    return {
+      recentCorpus: selectedCorpus,
+      recentResult: { ...recentSignals, gaps: [...gaps, ...recentSignals.gaps] },
+    };
   } catch {
     return {
-      recentCorpus: corpus,
+      recentCorpus: { sources: [], evidence: [] },
       recentResult: {
         signals: [],
         confidence: "low",
@@ -404,10 +420,14 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       company.name,
       () => extraction.invoke(hiringSignalMessages(company, corpus)),
     );
-    return { hiringCorpus: corpus, hiringResult: { ...hiringSignals, gaps: [...gaps, ...hiringSignals.gaps] } };
+    const selectedCorpus = retainStrongHiringEvidence(corpus, hiringSignals.signals);
+    return {
+      hiringCorpus: selectedCorpus,
+      hiringResult: { ...hiringSignals, gaps: [...gaps, ...hiringSignals.gaps] },
+    };
   } catch {
     return {
-      hiringCorpus: corpus,
+      hiringCorpus: { sources: [], evidence: [] },
       hiringResult: {
         signals: [],
         confidence: "low",
@@ -449,10 +469,17 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       company.name,
       () => extraction.invoke(securitySignalMessages(company, corpus)),
     );
-    return { securityCorpus: corpus, securityResult: { ...securitySignals, gaps: [...gaps, ...securitySignals.gaps] } };
+    const selectedCorpus = retainEvidenceForClaims(
+      corpus,
+      securitySignals.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
+    );
+    return {
+      securityCorpus: selectedCorpus,
+      securityResult: { ...securitySignals, gaps: [...gaps, ...securitySignals.gaps] },
+    };
   } catch {
     return {
-      securityCorpus: corpus,
+      securityCorpus: { sources: [], evidence: [] },
       securityResult: {
         signals: [],
         confidence: "low",
@@ -527,14 +554,16 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
 
   let reportCandidate: CompanyReport;
   try {
-    reportCandidate = CompanyReportSchema.parse({
-      researchId: state.researchId,
-      company: state.company,
-      ...content,
-      confidenceAndGaps: [...new Set([...nodeGaps, ...content.confidenceAndGaps])],
-      sources: corpus.sources,
-      evidence: corpus.evidence,
-    });
+    reportCandidate = retainCitedLineage(
+      CompanyReportSchema.parse({
+        researchId: state.researchId,
+        company: state.company,
+        ...content,
+        confidenceAndGaps: [...new Set([...nodeGaps, ...content.confidenceAndGaps])],
+        sources: corpus.sources,
+        evidence: corpus.evidence,
+      }),
+    );
   } catch {
     throw new ProtectedBoundaryError(
       "Grounding validation rejected an invalid report contract.",

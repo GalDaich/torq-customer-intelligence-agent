@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { CompanyReport as CompanyReportData } from "@/lib/schemas";
-import { CompanyReport } from "./company-report";
+import { CompanyReport, GroundedClaimText } from "./company-report";
 import { ReportLaunchCard } from "./report-launchpad";
 
 const report: CompanyReportData = {
@@ -55,10 +55,23 @@ const report: CompanyReportData = {
 
 describe("report citation rendering", () => {
   it("links visible claim badges to the normalized source URL", () => {
-    const html = renderToStaticMarkup(<CompanyReport report={report} />);
+    const html = renderToStaticMarkup(
+      <GroundedClaimText claim={report.whatTheyDo} report={report} />,
+    );
     expect(html).toContain('href="https://acme.example/about"');
     expect(html).toContain('class="source-badge"');
     expect(html).toContain("S1");
+  });
+});
+
+describe("report accordion", () => {
+  it("starts with every category collapsed", () => {
+    const html = renderToStaticMarkup(<CompanyReport report={report} />);
+
+    expect((html.match(/aria-expanded="false"/g) ?? [])).toHaveLength(8);
+    expect(html).toContain("What they do");
+    expect(html).toContain("Sources (1)");
+    expect(html).not.toContain("Acme automates security operations.");
   });
 });
 

@@ -1,6 +1,15 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
 import type { CompanyReport as CompanyReportData, GroundedClaim } from "@/lib/schemas";
 
-function Claim({ claim, report }: { claim: GroundedClaim; report: CompanyReportData }) {
+export function GroundedClaimText({
+  claim,
+  report,
+}: {
+  claim: GroundedClaim;
+  report: CompanyReportData;
+}) {
   const sourcesById = new Map(report.sources.map((source) => [source.id, source]));
   const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
   const sourceNumbers = new Map(report.sources.map((source, index) => [source.id, index + 1]));
@@ -41,7 +50,76 @@ function EmptyEvidence({ children }: { children: string }) {
   return <p className="empty-evidence">{children}</p>;
 }
 
+type ReportSectionId =
+  | "company"
+  | "recent"
+  | "hiring"
+  | "security"
+  | "pain-points"
+  | "talking-points"
+  | "confidence"
+  | "sources";
+
+function ReportAccordionSection({
+  reportId,
+  sectionId,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  reportId: string;
+  sectionId: ReportSectionId;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  const triggerId = `${reportId}-${sectionId}-trigger`;
+  const panelId = `${reportId}-${sectionId}-panel`;
+
+  return (
+    <section className="report-accordion-item">
+      <h3 className="report-accordion-heading">
+        <button
+          id={triggerId}
+          className="report-accordion-trigger"
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={onToggle}
+        >
+          <span>{title}</span>
+          <span className="accordion-mark" aria-hidden="true">{open ? "−" : "+"}</span>
+        </button>
+      </h3>
+      {open ? (
+        <div
+          id={panelId}
+          className="report-accordion-panel"
+          role="region"
+          aria-labelledby={triggerId}
+        >
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function CompanyReport({ report }: { report: CompanyReportData }) {
+  const [openSection, setOpenSection] = useState<ReportSectionId | null>(null);
+
+  function sectionProps(sectionId: ReportSectionId, title: string) {
+    return {
+      reportId: report.researchId,
+      sectionId,
+      title,
+      open: openSection === sectionId,
+      onToggle: () => setOpenSection((current) => (current === sectionId ? null : sectionId)),
+    };
+  }
+
   return (
     <article className="report-card">
       <header className="report-header">
@@ -58,127 +136,135 @@ export function CompanyReport({ report }: { report: CompanyReportData }) {
         </div>
       </header>
 
-      <section className="report-section report-lead">
-        <h3>What they do</h3>
-        <Claim claim={report.whatTheyDo} report={report} />
-      </section>
-
-      <div className="report-grid">
-        <section className="report-section">
-          <h3>Recent signals</h3>
-          {report.recentSignals.length === 0 ? (
-            <EmptyEvidence>No supported recent signals were found.</EmptyEvidence>
-          ) : (
-            <ul className="signal-list">
-              {report.recentSignals.map((signal, index) => (
-                <li key={`${signal.category}-${index}`}>
-                  <span className="category-label">{signal.category}</span>
-                  <Claim claim={signal.claim} report={report} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="report-section">
-          <h3>Hiring signals</h3>
-          {report.hiringSignals.length === 0 ? (
-            <EmptyEvidence>No supported security hiring signals were found.</EmptyEvidence>
-          ) : (
-            <ul className="signal-list">
-              {report.hiringSignals.map((signal, index) => (
-                <li key={`${signal.roleTitle}-${index}`}>
-                  <strong>{signal.roleTitle}</strong>
-                  <p className="signal-meta">
-                    {[signal.team, signal.location, signal.postedAt].filter(Boolean).join(" · ")}
-                  </p>
-                  <Claim claim={signal.claim} report={report} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="report-section">
-          <h3>Security signals</h3>
-          {report.securitySignals.length === 0 ? (
-            <EmptyEvidence>No explicit security signals were supported.</EmptyEvidence>
-          ) : (
-            <ul className="signal-list">
-              {report.securitySignals.map((signal, index) => (
-                <li key={`${signal.category}-${index}`}>
-                  <span className="category-label">{signal.category.replaceAll("_", " ")}</span>
-                  <Claim claim={signal.claim} report={report} />
-                  <div className="why-it-matters">
-                    <span>Why it matters</span>
-                    <Claim claim={signal.whyItMatters} report={report} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="report-section">
-          <h3>Likely pain points</h3>
-          {report.likelyPainPoints.length === 0 ? (
-            <EmptyEvidence>Evidence was too weak to infer a pain point.</EmptyEvidence>
-          ) : (
-            <ul className="numbered-list">
-              {report.likelyPainPoints.map((item, index) => (
-                <li key={`${item.painPoint}-${index}`}>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <div>
-                    <strong>{item.painPoint}</strong>
-                    <Claim claim={item.rationale} report={report} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <section className="report-section talking-points">
-        <h3>Suggested talking points</h3>
-        {report.talkingPoints.length === 0 ? (
-          <EmptyEvidence>Evidence was too weak for a responsible talking point.</EmptyEvidence>
-        ) : (
-          <div className="talking-grid">
-            {report.talkingPoints.map((item, index) => (
-              <div key={`${item.point}-${index}`}>
-                <span className="prompt-mark">↗</span>
-                <strong>{item.point}</strong>
-                <Claim claim={item.rationale} report={report} />
-              </div>
-            ))}
+      <div className="report-accordion-stack">
+        <ReportAccordionSection {...sectionProps("company", "What they do")}>
+          <div className="report-section report-lead">
+            <GroundedClaimText claim={report.whatTheyDo} report={report} />
           </div>
-        )}
-      </section>
+        </ReportAccordionSection>
 
-      <section className="report-section confidence-panel">
-        <h3>Confidence &amp; gaps</h3>
-        <ul>
-          {report.confidenceAndGaps.map((gap, index) => (
-            <li key={`${gap}-${index}`}>{gap}</li>
-          ))}
-        </ul>
-      </section>
+        <ReportAccordionSection {...sectionProps("recent", "Recent signals")}>
+          <div className="report-section">
+            {report.recentSignals.length === 0 ? (
+              <EmptyEvidence>No supported recent signals were found.</EmptyEvidence>
+            ) : (
+              <ul className="signal-list">
+                {report.recentSignals.map((signal, index) => (
+                  <li key={`${signal.category}-${index}`}>
+                    <span className="category-label">{signal.category}</span>
+                    <GroundedClaimText claim={signal.claim} report={report} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ReportAccordionSection>
 
-      <details className="sources-panel">
-        <summary>Sources ({report.sources.length})</summary>
-        <ol>
-          {report.sources.map((source, index) => (
-            <li key={source.id}>
-              <span>S{index + 1}</span>
-              <a href={source.url} target="_blank" rel="noreferrer">
-                {source.title}
-              </a>
-              <small>{source.publisher}</small>
-            </li>
-          ))}
-        </ol>
-      </details>
+        <ReportAccordionSection {...sectionProps("hiring", "Hiring signals")}>
+          <div className="report-section">
+            {report.hiringSignals.length === 0 ? (
+              <EmptyEvidence>No supported security hiring signals were found.</EmptyEvidence>
+            ) : (
+              <ul className="signal-list">
+                {report.hiringSignals.map((signal, index) => (
+                  <li key={`${signal.roleTitle}-${index}`}>
+                    <strong>{signal.roleTitle}</strong>
+                    <p className="signal-meta">
+                      {[signal.team, signal.location, signal.postedAt].filter(Boolean).join(" · ")}
+                    </p>
+                    <GroundedClaimText claim={signal.claim} report={report} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("security", "Security signals")}>
+          <div className="report-section">
+            {report.securitySignals.length === 0 ? (
+              <EmptyEvidence>No explicit security signals were supported.</EmptyEvidence>
+            ) : (
+              <ul className="signal-list">
+                {report.securitySignals.map((signal, index) => (
+                  <li key={`${signal.category}-${index}`}>
+                    <span className="category-label">{signal.category.replaceAll("_", " ")}</span>
+                    <GroundedClaimText claim={signal.claim} report={report} />
+                    <div className="why-it-matters">
+                      <span>Why it matters</span>
+                      <GroundedClaimText claim={signal.whyItMatters} report={report} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("pain-points", "Likely pain points")}>
+          <div className="report-section">
+            {report.likelyPainPoints.length === 0 ? (
+              <EmptyEvidence>Evidence was too weak to infer a pain point.</EmptyEvidence>
+            ) : (
+              <ul className="numbered-list">
+                {report.likelyPainPoints.map((item, index) => (
+                  <li key={`${item.painPoint}-${index}`}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <div>
+                      <strong>{item.painPoint}</strong>
+                      <GroundedClaimText claim={item.rationale} report={report} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("talking-points", "Suggested talking points")}>
+          <div className="report-section">
+            {report.talkingPoints.length === 0 ? (
+              <EmptyEvidence>Evidence was too weak for a responsible talking point.</EmptyEvidence>
+            ) : (
+              <div className="talking-grid">
+                {report.talkingPoints.map((item, index) => (
+                  <div key={`${item.point}-${index}`}>
+                    <span className="prompt-mark">↗</span>
+                    <strong>{item.point}</strong>
+                    <GroundedClaimText claim={item.rationale} report={report} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("confidence", "Confidence & gaps")}>
+          <div className="report-section confidence-panel">
+            <ul>
+              {report.confidenceAndGaps.map((gap, index) => (
+                <li key={`${gap}-${index}`}>{gap}</li>
+              ))}
+            </ul>
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("sources", `Sources (${report.sources.length})`)}>
+          <div className="report-section">
+            <ol className="sources-list">
+              {report.sources.map((source, index) => (
+                <li key={source.id}>
+                  <span>S{index + 1}</span>
+                  <a href={source.url} target="_blank" rel="noreferrer">
+                    {source.title}
+                  </a>
+                  <small>{source.publisher}</small>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </ReportAccordionSection>
+      </div>
     </article>
   );
 }

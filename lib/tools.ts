@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  canonicalEvidenceUrl,
+  evidenceFingerprint,
+  isGenericEvidenceSource,
+} from "./evidence-quality";
 import { logBackend } from "./logger";
 import {
   EvidenceSchema,
@@ -82,18 +87,24 @@ export function requireServerEnv(name: string): string {
 }
 
 export function assertResearchEnvironment(): void {
-  for (const name of [
-    "OPENAI_API_KEY",
-    "OPENAI_MODEL",
-    "TAVILY_API_KEY",
-    "FIRECRAWL_API_KEY",
-    "LANGSMITH_API_KEY",
-    "LANGSMITH_PROJECT",
-  ]) {
+  for (const name of ["OPENAI_API_KEY", "OPENAI_MODEL", "TAVILY_API_KEY", "FIRECRAWL_API_KEY"]) {
     requireServerEnv(name);
   }
+  assertLangSmithEnvironment();
+}
+
+export function assertResolutionEnvironment(): void {
+  for (const name of ["OPENAI_API_KEY", "OPENAI_MODEL", "TAVILY_API_KEY"]) {
+    requireServerEnv(name);
+  }
+  assertLangSmithEnvironment();
+}
+
+function assertLangSmithEnvironment(): void {
+  requireServerEnv("LANGSMITH_API_KEY");
+  requireServerEnv("LANGSMITH_PROJECT");
   if (process.env.LANGSMITH_TRACING !== "true") {
-    throw new Error("LANGSMITH_TRACING must be true for independently traceable research runs.");
+    throw new Error("LANGSMITH_TRACING must be true for traceable LLM operations.");
   }
 }
 
@@ -225,14 +236,22 @@ export async function searchTavily(
   const seenUrls = new Set<string>();
 
   for (const result of parsed.data.results) {
-    if (seenUrls.has(result.url)) continue;
-    seenUrls.add(result.url);
+    const canonicalUrl = canonicalEvidenceUrl(result.url);
+    if (seenUrls.has(canonicalUrl)) continue;
+    if (isGenericEvidenceSource({
+      sourceType: input.sourceType,
+      title: result.title,
+      url: canonicalUrl,
+    })) {
+      continue;
+    }
+    seenUrls.add(canonicalUrl);
     const ordinal = sources.length + 1;
     const source = SourceSchema.parse({
       id: `${input.idPrefix}-S${ordinal}`,
       title: result.title.trim() || publisherFor(result.url),
-      url: result.url,
-      publisher: publisherFor(result.url),
+      url: canonicalUrl,
+      publisher: publisherFor(canonicalUrl),
       sourceType: input.sourceType,
       publishedAt: result.published_date ?? null,
     });
@@ -326,10 +345,38 @@ export async function scrapeFirecrawl(
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
-  return {
-    sources: corpora.flatMap((corpus) => corpus.sources),
-    evidence: corpora.flatMap((corpus) => corpus.evidence),
-  };
+  const sources: Source[] = [];
+  const evidence: Evidence[] = [];
+  const seenUrls = new Set<string>();
+  const seenEvidence = new Set<string>();
+
+  for (const corpus of corpora) {
+    const evidenceBySource = new Map<string, Evidence[]>();
+    for (const item of corpus.evidence) {
+      const items = evidenceBySource.get(item.sourceId) ?? [];
+      items.push(item);
+      evidenceBySource.set(item.sourceId, items);
+    }
+
+    for (const source of corpus.sources) {
+      const canonicalUrl = canonicalEvidenceUrl(source.url);
+      if (seenUrls.has(canonicalUrl)) continue;
+
+      const uniqueEvidence = (evidenceBySource.get(source.id) ?? []).filter((item) => {
+        const fingerprint = evidenceFingerprint(item.excerpt);
+        if (!fingerprint || seenEvidence.has(fingerprint)) return false;
+        seenEvidence.add(fingerprint);
+        return true;
+      });
+      if (uniqueEvidence.length === 0) continue;
+
+      seenUrls.add(canonicalUrl);
+      sources.push({ ...source, url: canonicalUrl, publisher: publisherFor(canonicalUrl) });
+      evidence.push(...uniqueEvidence);
+    }
+  }
+
+  return { sources, evidence };
 }
 
 export function publicErrorMessage(error: unknown): string {
