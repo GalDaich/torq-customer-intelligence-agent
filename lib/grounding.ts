@@ -13,6 +13,9 @@ import {
   technologySignalsDescribeSameTechnology,
 } from "./evidence-quality";
 
+// This is the final trust boundary. It validates model-authored reports against retrieved
+// lineage and can omit unsafe optional findings, but it never rewrites or invents claims.
+
 export class GroundingValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -187,6 +190,8 @@ function uniqueIds(ids: string[], label: string): Set<string> {
 }
 
 export function retainCitedLineage(report: CompanyReport): CompanyReport {
+  // Reports retain only evidence cited by visible claims and only sources reached by that
+  // evidence, keeping unused search material out of the user-facing artifact.
   const citedEvidenceIds = new Set(allClaims(report).flatMap((claim) => claim.evidenceIds));
   const evidence = report.evidence.filter((item) => citedEvidenceIds.has(item.id));
   const citedSourceIds = new Set(evidence.map((item) => item.sourceId));
@@ -196,6 +201,8 @@ export function retainCitedLineage(report: CompanyReport): CompanyReport {
 }
 
 export function validateGroundedReport(input: unknown): CompanyReport {
+  // Validation is intentionally strict: every claim must resolve through evidence to one
+  // real source, and role/technology findings must stay specific and non-duplicated.
   const report = CompanyReportSchema.parse(input);
   const sourceIds = uniqueIds(
     report.sources.map((source) => source.id),

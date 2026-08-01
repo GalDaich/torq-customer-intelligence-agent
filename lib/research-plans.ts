@@ -1,6 +1,8 @@
 import type { ResolvedCompany } from "./schemas";
 import type { TavilySearchInput } from "./tools";
 
+// Search plans are fixed code rather than model output. That keeps provider spend,
+// recency, source breadth, and excluded aggregators predictable for every company.
 export type FocusedSearchPlan = Omit<TavilySearchInput, "idPrefix" | "sourceType">;
 
 const JOB_AGGREGATORS = [

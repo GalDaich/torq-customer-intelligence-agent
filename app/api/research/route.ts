@@ -16,6 +16,10 @@ import {
 } from "@/lib/schemas";
 import { publicErrorMessage } from "@/lib/tools";
 
+// Vercel Hobby Functions allow up to five minutes with Fluid Compute. The research route
+// streams throughout that window, which is enough for the bounded Level 1 demo workflow.
+export const maxDuration = 300;
+
 type ResearchInput = {
   researchId: string;
   company: ResolvedCompany;
@@ -26,32 +30,6 @@ type ProgressRunner = (
   company: ResolvedCompany,
   onProgress?: (update: ResearchProgressUpdate) => void | Promise<void>,
 ) => Promise<CompanyReport>;
-
-export async function executeResearchBatch(
-  companies: ResearchInput[],
-  runner: (researchId: string, company: ResolvedCompany) => Promise<CompanyReport> = runCompanyResearch,
-) {
-  const settled = await Promise.allSettled(
-    companies.map(({ researchId, company }) => runner(researchId, company)),
-  );
-  const reports: CompanyReport[] = [];
-  const failures: Array<{ researchId: string; companyName: string; message: string }> = [];
-
-  settled.forEach((result, index) => {
-    const input = companies[index];
-    if (result.status === "fulfilled") {
-      reports.push(result.value);
-    } else {
-      failures.push({
-        researchId: input.researchId,
-        companyName: input.company.name,
-        message: publicErrorMessage(result.reason),
-      });
-    }
-  });
-
-  return ResearchResponseSchema.parse({ reports, failures });
-}
 
 export function createResearchStream(
   companies: ResearchInput[],
@@ -71,6 +49,8 @@ export function createResearchStream(
 
       void (async () => {
         try {
+          // Company graphs run independently. A protected failure becomes one batch failure
+          // record and does not erase reports already produced for the other companies.
           const outcomes = await Promise.all(
             companies.map(async ({ researchId, company }) => {
               try {
@@ -138,6 +118,8 @@ export function createResearchStream(
 
 export async function POST(request: Request) {
   try {
+    // The response stays open as NDJSON so the browser can render actual graph events
+    // instead of guessing progress with a timer.
     const body = ResearchRequestSchema.parse(await request.json());
     return new Response(createResearchStream(body.companies), {
       headers: {

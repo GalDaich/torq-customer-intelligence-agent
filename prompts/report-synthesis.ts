@@ -9,6 +9,8 @@ import type {
 import type { ResearchCorpus } from "../lib/tools";
 import { GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
+// The final author sees only specialist-selected evidence. It composes the report but
+// cannot create source lineage; deterministic grounding runs after this prompt returns.
 const SYSTEM_PROMPT = `
 <role>
 You write a concise, evidence-grounded customer intelligence report for a Torq account executive or CSM preparing for a security conversation.

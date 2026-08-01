@@ -2,6 +2,8 @@ import type { ResolvedCompany } from "../lib/schemas";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
+// Hiring signals require one current, item-specific role and one strongest citation so a
+// syndicated posting cannot inflate apparent hiring activity.
 const SYSTEM_PROMPT = `
 <role>
 You identify specific current security-related job openings without double-counting syndicated listings.

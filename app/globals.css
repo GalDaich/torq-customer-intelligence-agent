@@ -1,3 +1,4 @@
+/* Global design tokens and browser defaults. */
 :root {
   color-scheme: dark;
   --background: #07090d;
@@ -49,6 +50,7 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
+/* Main workspace shell, masthead, and introduction. */
 .workspace-shell {
   width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
@@ -110,6 +112,7 @@ code {
   line-height: 1.65;
 }
 
+/* Company entry and reusable card/button styles. */
 .input-card,
 .resolution-panel,
 .report-card {
@@ -274,6 +277,7 @@ code {
   font-size: 13px;
 }
 
+/* Human company-website confirmation step. */
 .resolution-panel {
   margin-top: 28px;
   overflow: hidden;
@@ -589,6 +593,7 @@ code {
   font-size: 11px;
 }
 
+/* Live graph progress, driven by streamed server events. */
 .progress-panel {
   margin-top: 28px;
   overflow: hidden;
@@ -726,6 +731,7 @@ code {
   50% { opacity: 0.45; }
 }
 
+/* Completed-report launchpad and partial-batch failure states. */
 .results-area {
   display: grid;
   gap: 24px;
@@ -845,6 +851,7 @@ code {
   font-size: 9px;
 }
 
+/* Full report tab and single-open accordion. */
 .report-card {
   overflow: hidden;
 }
@@ -1179,6 +1186,7 @@ code {
   font-size: 8px;
 }
 
+/* Narrow-screen adjustments keep every workflow phase usable on mobile. */
 @media (max-width: 760px) {
   .workspace-shell {
     width: min(100% - 24px, 1180px);

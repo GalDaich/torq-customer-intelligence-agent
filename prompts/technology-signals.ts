@@ -6,6 +6,8 @@ import {
   TORQ_RELEVANCE_FRAME,
 } from "./shared";
 
+// Technology findings name one explicit tool at a time and frame it only as a possible
+// workflow surface—not proof of pain, fragmentation, or purchase intent.
 const SYSTEM_PROMPT = `
 <role>
 You identify explicit technology-stack signals that can ground a responsible Torq integration and automation conversation.

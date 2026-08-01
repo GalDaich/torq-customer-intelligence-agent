@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// Shared contracts for providers, graph nodes, route handlers, streamed browser events,
+// and rendered reports. Parsing at each boundary stops malformed or invented data from
+// quietly moving into the next layer.
+
 export const SourceSchema = z
   .object({
     id: z.string().min(1),
@@ -300,11 +304,9 @@ export type CompanyCandidate = z.infer<typeof CompanyCandidateSchema>;
 export type CompanyResolution = z.infer<typeof CompanyResolutionSchema>;
 export type ResolvedCompany = z.infer<typeof ResolvedCompanySchema>;
 export type FirstPartyContext = z.infer<typeof FirstPartyContextSchema>;
-export type RecentSignal = z.infer<typeof RecentSignalSchema>;
 export type RecentSignals = z.infer<typeof RecentSignalsSchema>;
 export type HiringSignal = z.infer<typeof HiringSignalSchema>;
 export type HiringSignals = z.infer<typeof HiringSignalsSchema>;
-export type SecuritySignal = z.infer<typeof SecuritySignalSchema>;
 export type SecuritySignals = z.infer<typeof SecuritySignalsSchema>;
 export type TechnologySignal = z.infer<typeof TechnologySignalSchema>;
 export type TechnologySignals = z.infer<typeof TechnologySignalsSchema>;
@@ -312,4 +314,3 @@ export type CompanyReport = z.infer<typeof CompanyReportSchema>;
 export type ResearchResponse = z.infer<typeof ResearchResponseSchema>;
 export type ResearchStage = z.infer<typeof ResearchStageSchema>;
 export type ResearchProgressEvent = z.infer<typeof ResearchProgressEventSchema>;
-export type ResearchStreamEvent = z.infer<typeof ResearchStreamEventSchema>;

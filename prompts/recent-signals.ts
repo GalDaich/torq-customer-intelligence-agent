@@ -2,6 +2,8 @@ import type { ResolvedCompany } from "../lib/schemas";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES } from "./shared";
 
+// Recent-signal classification selects specific dated events, not generic news indexes or
+// several articles describing the same underlying event.
 const SYSTEM_PROMPT = `
 <role>
 You identify concrete, current company events that can improve a customer conversation.

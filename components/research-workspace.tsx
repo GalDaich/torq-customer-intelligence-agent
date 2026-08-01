@@ -21,6 +21,8 @@ import { CompanyTagInput } from "./company-tag-input";
 import { ReportLaunchCard } from "./report-launchpad";
 import { ResearchProgress } from "./research-progress";
 
+// One explicit phase value drives the end-to-end browser journey and prevents controls
+// from authorizing work while a previous step is still in progress.
 type Phase = "input" | "resolving" | "resolution" | "researching" | "results";
 
 async function postJson(url: string, body: unknown): Promise<unknown> {
@@ -93,6 +95,8 @@ export function ResearchWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companies: inputs }),
       });
+      // Stream events update transient progress; only the final typed response becomes
+      // durable component state for the current page session.
       const payload = await readResearchStream(response, (event) => {
         setProgressEvents((current) => [...current, event]);
       });

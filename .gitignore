@@ -7,3 +7,9 @@ coverage/
 npm-debug.log*
 .DS_Store
 *.tsbuildinfo
+.vercel/
+
+# Local agent tooling is useful on this machine but is not part of the application.
+.agents/
+.claude/
+skills-lock.json

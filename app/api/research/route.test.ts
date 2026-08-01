@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ResearchStreamEventSchema,
   type CompanyReport,
   type ResolvedCompany,
 } from "@/lib/schemas";
-import { createResearchStream, executeResearchBatch } from "./route";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+import { createResearchStream } from "./route";
 
 const companies = [
   {
@@ -77,11 +73,20 @@ describe("independent research execution", () => {
       return reportFor(researchId, company);
     });
 
-    const result = await executeResearchBatch(companies, runner);
+    const body = await new Response(createResearchStream(companies, runner)).text();
+    const events = body
+      .trim()
+      .split("\n")
+      .map((line) => ResearchStreamEventSchema.parse(JSON.parse(line)));
+    const complete = events.find((event) => event.type === "complete");
 
     expect(runner).toHaveBeenCalledTimes(2);
-    expect(result.reports.map((report) => report.researchId)).toEqual([companies[0].researchId]);
-    expect(result.failures).toEqual([
+    expect(complete?.type).toBe("complete");
+    if (complete?.type !== "complete") throw new Error("Expected a complete stream event.");
+    expect(complete.response.reports.map((report) => report.researchId)).toEqual([
+      companies[0].researchId,
+    ]);
+    expect(complete.response.failures).toEqual([
       {
         researchId: companies[1].researchId,
         companyName: "Beta",
@@ -91,7 +96,6 @@ describe("independent research execution", () => {
   });
 
   it("streams real stage updates followed by the validated batch response", async () => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
     const runner = vi.fn(
       async (
         researchId: string,

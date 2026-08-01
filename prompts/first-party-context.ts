@@ -2,6 +2,8 @@ import type { ResolvedCompany } from "../lib/schemas";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES } from "./shared";
 
+// First-party extraction is limited to the confirmed company's own pages and does not
+// speculate about security needs or operating maturity.
 const SYSTEM_PROMPT = `
 <role>
 You extract a company profile from first-party public evidence for a sales-preparation workflow.

@@ -75,7 +75,7 @@ export type TavilySearchInput = {
   minimumScore?: number;
 };
 
-export type FirecrawlMapLink = z.infer<typeof FirecrawlMapResponseSchema>["links"][number];
+type FirecrawlMapLink = z.infer<typeof FirecrawlMapResponseSchema>["links"][number];
 
 export const FIRECRAWL_FREE_TIER_LIMITS = {
   maxConcurrency: 2,
@@ -103,6 +103,8 @@ export class RequestBudgetGate {
   ) {}
 
   private async acquireConcurrency(): Promise<void> {
+    // Waiting requests receive the released slot directly, so `active` never exceeds
+    // the provider's free-tier concurrency allowance.
     if (this.active < this.maxConcurrency) {
       this.active += 1;
       return;
@@ -250,6 +252,8 @@ export async function searchTavily(
   input: TavilySearchInput,
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
+  // Provider-specific JSON is converted here into the small Source/Evidence contract
+  // used everywhere else. Raw Tavily payloads never reach prompts or the browser.
   const apiKey = options.apiKey ?? requireServerEnv("TAVILY_API_KEY");
   const payload = await providerJson(
     "Tavily",
@@ -396,6 +400,8 @@ export async function scrapeFirecrawl(
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
+  // Mapping chooses candidate pages; scraping reads only a bounded page set and returns
+  // the same normalized corpus shape as Tavily.
   const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
   const request = () => providerJson(
     "Firecrawl",
@@ -452,6 +458,8 @@ export async function scrapeFirecrawl(
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
+  // Canonical URLs and excerpt fingerprints prevent the same underlying evidence from
+  // being counted twice when several specialist searches find it independently.
   const sources: Source[] = [];
   const evidence: Evidence[] = [];
   const seenUrls = new Set<string>();

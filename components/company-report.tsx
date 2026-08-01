@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import type { CompanyReport as CompanyReportData, GroundedClaim } from "@/lib/schemas";
 
+// Every visible claim resolves its evidence IDs back to source URLs and renders compact
+// citation badges. Missing lineage cannot be invented by this presentation layer.
 export function GroundedClaimText({
   claim,
   report,
@@ -109,6 +111,7 @@ function ReportAccordionSection({
 }
 
 export function CompanyReport({ report }: { report: CompanyReportData }) {
+  // A single section can be open at a time, keeping long reports easy to scan during a call.
   const [openSection, setOpenSection] = useState<ReportSectionId | null>(null);
 
   function sectionProps(sectionId: ReportSectionId, title: string) {

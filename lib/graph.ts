@@ -54,6 +54,9 @@ import {
   type ResearchCorpus,
 } from "./tools";
 
+// One graph represents one confirmed company. Five specialist branches collect and
+// classify evidence in parallel before a separate synthesis and deterministic validation.
+
 const ResearchCorpusSchema = z
   .object({
     sources: z.array(SourceSchema),
@@ -89,6 +92,8 @@ const ReportContentSchema = z
   .strict();
 
 const ResearchState = new StateSchema({
+  // Parallel nodes write to separate keys; the synthesis node is the first place their
+  // evidence and gap lists are combined.
   researchId: z.string().uuid(),
   company: ResolvedCompanySchema,
   firstPartyCorpus: ResearchCorpusSchema.optional(),
@@ -217,6 +222,8 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
   corpus: ResearchCorpus;
   gaps: string[];
 }> {
+  // The confirmed origin is always scraped; mapping may add at most two focused company,
+  // product, platform, solution, or about pages from the same host.
   const origin = new URL(company.websiteUrl).origin;
   const gaps: string[] = [];
   let mappedLinks: Awaited<ReturnType<typeof mapFirecrawl>> = [];
@@ -282,6 +289,8 @@ async function searchPatterns(
   prefix: string,
   sourceType: "news" | "hiring" | "security" | "technology",
 ): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
+  // Search calls within a specialist run together. Expected server/network failures become
+  // gaps, while provider 4xx responses remain blocking because the request was rejected.
   const settled = await Promise.allSettled(
     patterns.map((pattern, index) =>
       searchTavily({
@@ -502,6 +511,8 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
 };
 
 const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
+  // Synthesis sees only evidence retained by the specialist classifiers, never the full
+  // raw result set returned by Tavily or Firecrawl.
   const corpus = mergeCorpora([
     state.firstPartyCorpus ?? { sources: [], evidence: [] },
     state.recentCorpus ?? { sources: [], evidence: [] },
@@ -635,6 +646,7 @@ const validateReportNode: GraphNode<typeof ResearchState> = (state) => {
 };
 
 export const researchGraph = new StateGraph({ state: ResearchState, output: ResearchOutput })
+  // Fan out after START, join all five specialists at synthesis, then validate once.
   .addNode("firstPartyContext", withStageBoundary("firstPartyContext", firstPartyContextNode))
   .addNode("recentSignals", withStageBoundary("recentSignals", recentSignalsNode))
   .addNode("hiringSignals", withStageBoundary("hiringSignals", hiringSignalsNode))

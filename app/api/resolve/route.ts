@@ -5,6 +5,8 @@ import { assertResolutionEnvironment, publicErrorMessage } from "@/lib/tools";
 
 export async function POST(request: Request) {
   try {
+    // Resolution discovers possibilities only. The browser must still record an explicit
+    // candidate, manual website, or discard decision before research is authorized.
     const body = ResolveRequestSchema.parse(await request.json());
     const companies = normalizeCompanyNames(body.companies);
     assertResolutionEnvironment();

@@ -4,6 +4,7 @@ import {
   type ResolvedCompany,
 } from "./schemas";
 
+// These decisions are created only by explicit user actions in the resolution screen.
 export type ResolutionDecision =
   | { kind: "candidate"; candidateId: string }
   | { kind: "manual"; company: ResolvedCompany }
@@ -18,6 +19,8 @@ export function companyFromManualWebsite(
   inputName: string,
   websiteInput: string,
 ): ResolvedCompany {
+  // Manual confirmation accepts only a public-looking HTTP(S) origin and strips paths,
+  // credentials, and `www` so downstream searches receive one stable company boundary.
   const trimmed = websiteInput.trim();
   if (!trimmed || /\s/.test(trimmed)) {
     throw new Error("Enter a valid company website.");
@@ -47,6 +50,7 @@ export function selectedCompaniesFromDecisions(
   resolutions: CompanyResolution[],
   decisions: Record<string, ResolutionDecision>,
 ): SelectedCompany[] {
+  // Discarded rows disappear from the research batch; undecided rows keep the batch blocked.
   return resolutions.flatMap((resolution) => {
     const decision = decisions[resolution.researchId];
     if (!decision || decision.kind === "discarded") return [];

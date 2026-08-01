@@ -2,6 +2,8 @@
 
 import { useState, type ClipboardEvent, type KeyboardEvent } from "react";
 
+// Keep parsing separate from rendering so comma/newline handling, deduplication, and the
+// five-company limit can be verified without a browser.
 export function parseCompanyTokens(existing: string[], raw: string, maximum = 5) {
   const companies = [...existing];
   const seen = new Set(existing.map((name) => name.toLocaleLowerCase()));

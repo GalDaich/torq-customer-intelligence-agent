@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// The root layout supplies document metadata and the one global stylesheet used by both
+// the main workspace and report tabs opened from it.
 export const metadata: Metadata = {
   title: "Customer Intelligence Agent | Torq",
   description:

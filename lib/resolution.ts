@@ -7,6 +7,9 @@ import {
 import { normalizeCompanyCandidates } from "./company-normalization";
 import { searchTavily, type ResearchCorpus } from "./tools";
 
+// Resolution answers only "which public website might represent this name?" It never
+// grants permission to research; that decision stays in the browser confirmation step.
+
 const NON_COMPANY_HOSTS = [
   "bloomberg.com",
   "crunchbase.com",
@@ -96,6 +99,8 @@ export function candidatesFromCorpus(
   researchId: string,
   corpus: ResearchCorpus,
 ): CompanyCandidate[] {
+  // Results are grouped by host so several matching pages become one candidate rather
+  // than misleading the user with duplicates from the same website.
   const evidenceBySource = new Map(corpus.evidence.map((item) => [item.sourceId, item.excerpt]));
   const grouped = new Map<string, CompanyCandidate>();
   const inputDomain = domainFromInput(inputName);
@@ -132,6 +137,8 @@ export async function resolveCompanyName(
   search: typeof searchTavily = searchTavily,
   normalize: typeof normalizeCompanyCandidates = normalizeCompanyCandidates,
 ): Promise<CompanyResolution> {
+  // The UUID is created before discovery and follows this company through normalization,
+  // the eventual graph run, progress events, report output, and LangSmith traces.
   const researchId = randomUUID();
   const inputDomain = domainFromInput(inputName);
   const corpus = await search({

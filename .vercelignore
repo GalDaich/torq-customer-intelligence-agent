@@ -1,0 +1,11 @@
+# Local agent tooling is unrelated to the application and should never be uploaded.
+.agents/
+.claude/
+skills-lock.json
+
+# Local secrets and generated caches/builds are recreated by Vercel.
+.env.local
+.next/
+node_modules/
+coverage/
+*.tsbuildinfo

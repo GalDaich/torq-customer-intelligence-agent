@@ -2,6 +2,8 @@ import type { ResolvedCompany } from "../lib/schemas";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
+// This specialist keeps the observed security fact separate from the bounded explanation
+// of why it may matter in a Torq conversation.
 const SYSTEM_PROMPT = `
 <role>
 You identify explicit security and operational signals relevant to a responsible security-automation conversation.

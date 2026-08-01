@@ -27,6 +27,8 @@ export async function readResearchStream(
   let completedResponse: ResearchResponse | undefined;
 
   const consumeLine = (line: string) => {
+    // Each newline is one schema-checked event. The final `complete` event carries the
+    // batch result; earlier events exist only to drive live progress.
     if (!line.trim()) return;
     const event = ResearchStreamEventSchema.parse(JSON.parse(line));
     if (event.type === "progress") onProgress(event);
@@ -38,6 +40,8 @@ export async function readResearchStream(
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
+    // A network chunk can end halfway through a JSON line, so the unfinished tail stays
+    // buffered until the next chunk arrives.
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
     lines.forEach(consumeLine);

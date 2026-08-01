@@ -1,5 +1,7 @@
 import type { CompanyCandidate } from "../lib/schemas";
 
+// This pre-graph prompt may clean display text and rank known candidates. Deterministic
+// code later verifies that the exact discovered candidate-ID set was preserved.
 const SYSTEM_PROMPT = `
 <role>
 You are a precise company-identity ranker and editor. You identify which discovered domain is most likely to be the company's primary official website, then clean its public-search label without changing the discovered identity.

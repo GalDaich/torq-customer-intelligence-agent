@@ -18,7 +18,7 @@ const CandidateIdentityBatchSchema = z
   })
   .strict();
 
-export type CandidateIdentityBatch = z.infer<typeof CandidateIdentityBatchSchema>;
+type CandidateIdentityBatch = z.infer<typeof CandidateIdentityBatchSchema>;
 
 export function companyNormalizationTraceConfig(
   input: string,
@@ -46,6 +46,8 @@ export function applyCandidateNormalizations(
   candidates: CompanyCandidate[],
   output: CandidateIdentityBatch,
 ): CompanyCandidate[] {
+  // The model may improve display text and ordering, but it cannot add, remove, or
+  // replace provider-discovered candidate IDs and their authoritative URLs.
   const parsed = CandidateIdentityBatchSchema.parse(output);
   const expectedIds = new Set(candidates.map((candidate) => candidate.id));
   const returnedIds = new Set(parsed.candidates.map((candidate) => candidate.candidateId));
@@ -81,6 +83,8 @@ export async function normalizeCompanyCandidates(
 ): Promise<CompanyCandidate[]> {
   if (candidates.length === 0) return [];
 
+  // Identity normalization is separate from the later company graph. Its trace still
+  // shares the research UUID so the two operations can be correlated in LangSmith.
   const operation = "normalize_company_identity";
 
   try {

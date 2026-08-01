@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { CompanyReport as CompanyReportData } from "@/lib/schemas";
 import { CompanyReport } from "./company-report";
 
+// Reports open in plain browser tabs so several companies can be compared side by side.
+// The new document reuses the app stylesheet and mounts the same schema-backed component.
 async function renderReportTab(report: CompanyReportData, reportWindow: Window) {
   const { createRoot } = await import("react-dom/client");
   if (reportWindow.closed) return;

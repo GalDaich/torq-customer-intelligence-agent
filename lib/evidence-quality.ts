@@ -6,6 +6,9 @@ import type {
   TechnologySignal,
 } from "./schemas";
 
+// Evidence cleanup happens before and after model calls. These deterministic helpers make
+// duplicate, generic, and bundled findings rejectable without asking an LLM to self-police.
+
 const TRACKING_PARAMETERS = new Set([
   "fbclid",
   "gclid",
@@ -121,6 +124,7 @@ export function retainEvidenceForClaims(
   corpus: EvidenceCorpus,
   claims: GroundedClaim[],
 ): EvidenceCorpus {
+  // Specialist nodes may select only IDs that were present in their own retrieved corpus.
   const requestedEvidenceIds = new Set(claims.flatMap((claim) => claim.evidenceIds));
   const availableEvidenceIds = new Set(corpus.evidence.map((evidence) => evidence.id));
   for (const evidenceId of requestedEvidenceIds) {

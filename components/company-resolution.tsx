@@ -4,6 +4,9 @@ import { useState } from "react";
 import type { ResolutionDecision } from "@/lib/company-selection";
 import type { CompanyResolution } from "@/lib/schemas";
 
+// This screen is the human authorization boundary between search-based discovery and
+// paid research. No candidate is silently accepted, even when only one result exists.
+
 type Props = {
   resolutions: CompanyResolution[];
   decisions: Record<string, ResolutionDecision>;

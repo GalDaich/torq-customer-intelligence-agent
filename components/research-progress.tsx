@@ -1,5 +1,7 @@
 import type { ResearchProgressEvent, ResearchStage } from "@/lib/schemas";
 
+// The stage order mirrors the graph contract. Percentages are derived from completed or
+// failed server events, never from a client-side estimate.
 const STAGES: Array<{ id: ResearchStage; label: string }> = [
   { id: "firstPartyContext", label: "First-party" },
   { id: "recentSignals", label: "Recent signals" },
@@ -18,36 +20,28 @@ type ResearchInput = {
 export function ResearchProgress({
   companies,
   events,
-  finished = false,
 }: {
   companies: ResearchInput[];
   events: ResearchProgressEvent[];
-  finished?: boolean;
 }) {
   const latest = events[events.length - 1];
   const percentage = latest
     ? Math.min(100, Math.round((latest.completedSteps / latest.totalSteps) * 100))
     : 0;
-  const active = finished
-    ? undefined
-    : [...events]
-        .reverse()
-        .find(
-          (event) =>
-            event.status === "started" &&
-            !events.some(
-              (candidate) =>
-                candidate.researchId === event.researchId &&
-                candidate.stage === event.stage &&
-                candidate.sequence > event.sequence &&
-                candidate.status !== "started",
-            ),
-        );
-  const heading = finished
-    ? percentage === 100
-      ? "Research run completed."
-      : "Research run finished with incomplete stages."
-    : active?.message ?? "Preparing company research…";
+  const active = [...events]
+    .reverse()
+    .find(
+      (event) =>
+        event.status === "started" &&
+        !events.some(
+          (candidate) =>
+            candidate.researchId === event.researchId &&
+            candidate.stage === event.stage &&
+            candidate.sequence > event.sequence &&
+            candidate.status !== "started",
+        ),
+    );
+  const heading = active?.message ?? "Preparing company research…";
 
   return (
     <section className="progress-panel" aria-live="polite" aria-labelledby="progress-title">
