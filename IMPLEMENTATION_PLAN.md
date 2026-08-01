@@ -9,7 +9,7 @@ Completed locally:
 - Tavily and Firecrawl normalization wrappers.
 - Four parallel research nodes, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, and trace tag propagation.
-- Tavily-backed name/domain resolution, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
+- Tavily-backed name/domain resolution, strict LLM identity normalization, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
 - LangGraph task-event streaming with an event-driven progress bar and browser activity log.
 - Correlated structured JSON logs across resolution, batch, graph-stage, and provider boundaries.
 - Torq-inspired responsive browser UI with source badges and visible gaps.
@@ -17,7 +17,6 @@ Completed locally:
 
 Pending before the local milestone can be called complete:
 
-- Populate real provider and LangSmith credentials.
 - Run the one-company, ambiguous-name, five-company, weak-data, and provider-failure live checks.
 - Verify matching LangSmith traces and every external source link.
 - Replace the honest placeholder in `sample-report.md` with output from a real run.
@@ -93,6 +92,7 @@ The UUID and graph state should be shaped so persistence can be added later, but
 Company tags
     -> POST /api/resolve
     -> Exact-domain or plausible-name candidate grouping
+    -> LLM normalizes candidate name and description under fixed ID/domain/URL controls
     -> Auto-continue for unique matches; user selects ambiguous matches
     -> POST /api/research
     -> Stream actual LangGraph task events
@@ -156,6 +156,7 @@ components/
   company-report.tsx
 
 lib/
+  company-normalization.ts
   schemas.ts
   logger.ts
   research-stream.ts
@@ -388,6 +389,9 @@ Behavior:
 - Generate one `researchId` per submitted company.
 - For a domain, constrain discovery to that domain and group root/subdomain results.
 - For a name, retain plausible normalized name/domain-stem matches.
+- Send only plausible candidates through strict structured-output identity normalization.
+- Let the model rewrite only `name` and `description`; retain candidate ID, domain, website URL, and source IDs deterministically.
+- Reject failed normalization, missing/duplicate candidate IDs, and invented candidate references instead of using raw page-title text.
 - Mark one plausible match as `unique`; mark multiple plausible matches as `ambiguous`.
 - Return `CompanyResolution[]`.
 
@@ -742,6 +746,7 @@ Add tests only around behavior that protects the contracts:
 - Source/evidence ID integrity.
 - Company-resolution status handling.
 - Exact-domain resolution, unique plausible-name resolution, and ambiguous partial-name handling.
+- LLM identity normalization with immutable candidate references and a raw-title regression case.
 - Partial batch failure handling.
 - One-company/one-research-ID execution.
 - Fragmented newline-delimited progress stream parsing.

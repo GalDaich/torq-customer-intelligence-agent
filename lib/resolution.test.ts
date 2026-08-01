@@ -5,8 +5,13 @@ import {
   normalizeCompanyNames,
   resolveCompanyName,
 } from "./resolution";
+import type { CompanyCandidate } from "./schemas";
 
 const researchId = "bfe869fc-6514-425a-9a2d-5682a1ef4582";
+const preserveCandidates = async (
+  _input: string,
+  candidates: CompanyCandidate[],
+) => candidates;
 
 describe("company-name normalization", () => {
   it("trims, collapses whitespace, and deduplicates case-insensitively", () => {
@@ -134,7 +139,7 @@ describe("candidate discovery", () => {
       evidence: [],
     });
 
-    const resolution = await resolveCompanyName("rapid", search);
+    const resolution = await resolveCompanyName("rapid", search, preserveCandidates);
     expect(resolution.status).toBe("ambiguous");
     expect(resolution.candidates.map((candidate) => candidate.domain)).toEqual([
       "rapid7.com",
@@ -165,9 +170,53 @@ describe("candidate discovery", () => {
       evidence: [],
     });
 
-    const resolution = await resolveCompanyName("Rapid7", search);
+    const resolution = await resolveCompanyName("Rapid7", search, preserveCandidates);
     expect(resolution.status).toBe("unique");
     expect(resolution.candidates).toHaveLength(1);
     expect(resolution.candidates[0].domain).toBe("rapid7.com");
+  });
+
+  it("uses normalized identity text instead of a raw page title", async () => {
+    const search = async () => ({
+      sources: [
+        {
+          id: "RES-S1",
+          title: "Join monday.com | One platform for all your work",
+          url: "https://monday.com",
+          publisher: "monday.com",
+          sourceType: "other" as const,
+          publishedAt: null,
+        },
+      ],
+      evidence: [
+        {
+          id: "RES-E1",
+          sourceId: "RES-S1",
+          excerpt: "monday.com is a work management platform.",
+          collectedAt: "2026-08-01T09:00:00.000Z",
+        },
+      ],
+    });
+    const normalize = async (
+      _input: string,
+      candidates: CompanyCandidate[],
+    ): Promise<CompanyCandidate[]> => {
+      expect(candidates[0].name).toBe("Join monday.com");
+      return candidates.map((candidate) => ({
+        ...candidate,
+        name: "monday.com",
+        description: "monday.com is a work management platform.",
+      }));
+    };
+
+    const resolution = await resolveCompanyName("monday.com", search, normalize);
+
+    expect(resolution.status).toBe("unique");
+    expect(resolution.candidates[0]).toMatchObject({
+      name: "monday.com",
+      domain: "monday.com",
+      websiteUrl: "https://monday.com",
+      description: "monday.com is a work management platform.",
+    });
   });
 });

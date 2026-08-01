@@ -4,6 +4,7 @@ import {
   type CompanyCandidate,
   type CompanyResolution,
 } from "./schemas";
+import { normalizeCompanyCandidates } from "./company-normalization";
 import { searchTavily, type ResearchCorpus } from "./tools";
 
 const NON_COMPANY_HOSTS = [
@@ -110,6 +111,7 @@ export function candidatesFromCorpus(
 export async function resolveCompanyName(
   inputName: string,
   search: typeof searchTavily = searchTavily,
+  normalize: typeof normalizeCompanyCandidates = normalizeCompanyCandidates,
 ): Promise<CompanyResolution> {
   const researchId = randomUUID();
   const inputDomain = domainFromInput(inputName);
@@ -128,13 +130,18 @@ export async function resolveCompanyName(
     ? discovered.filter((candidate) => domainMatches(candidate.domain, inputDomain))
     : discovered.filter((candidate) => nameMatches(candidate, inputName));
   const candidates = plausible.length > 0 ? plausible : discovered;
-  const status = candidates.length === 0 ? "not_found" : candidates.length === 1 ? "unique" : "ambiguous";
+  const normalizedCandidates = await normalize(inputName, candidates, { researchId });
+  const status = normalizedCandidates.length === 0
+    ? "not_found"
+    : normalizedCandidates.length === 1
+      ? "unique"
+      : "ambiguous";
 
   return CompanyResolutionSchema.parse({
     researchId,
     inputName,
     status,
-    candidates,
+    candidates: normalizedCandidates,
     sources: corpus.sources,
     gaps: status === "not_found" ? ["No plausible official company website was found."] : [],
   });

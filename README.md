@@ -2,19 +2,20 @@
 
 A local-first Level 1 browser product for researching one to five companies from public sources and turning the evidence into concise, Torq-relevant customer intelligence.
 
-The implementation is complete through deterministic tests, production build, and credential-failure browser verification. A live Tavily + Firecrawl + OpenAI + LangSmith smoke test is intentionally pending until real credentials are added. Deployment is out of scope until that local gate passes.
+The implementation is complete through deterministic tests, production build, browser verification, and initial credential-backed user testing. The full one-to-five-company acceptance matrix and trace review remain pending. Deployment is out of scope until that local gate passes.
 
 ## What the product does
 
 1. Accepts one to five company names or domains as removable tags.
 2. Searches for plausible official company identities and prefers an exact domain match.
-3. Continues automatically for a single match and requires human selection only when multiple plausible matches remain.
-4. Runs one independent LangGraph execution per selected company.
-5. Collects first-party, recent, hiring, and security evidence.
-6. Uses an LLM to classify evidence and synthesize the final report.
-7. Deterministically rejects unsupported evidence references.
-8. Returns successful company reports even when another company fails.
-9. Streams real graph-stage progress to the browser and records a timestamped run log.
+3. Uses a strict LLM normalization step to turn raw page titles such as `Join monday.com` into a clean grounded identity such as `monday.com`.
+4. Continues automatically for a single match and requires human selection only when multiple plausible matches remain.
+5. Runs one independent LangGraph execution per selected company.
+6. Collects first-party, recent, hiring, and security evidence.
+7. Uses an LLM to classify evidence and synthesize the final report.
+8. Deterministically rejects unsupported evidence references.
+9. Returns successful company reports even when another company fails.
+10. Streams real graph-stage progress to the browser and records a timestamped run log.
 
 ## Local prerequisites
 
@@ -38,7 +39,7 @@ Secrets belong only in `.env.local`. That file is ignored by Git. No environment
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | Yes | Authenticates evidence classification and report synthesis. |
+| `OPENAI_API_KEY` | Yes | Authenticates identity normalization, evidence classification, and report synthesis. |
 | `OPENAI_MODEL` | Yes | Exact OpenAI model ID to use for strict structured output. |
 | `TAVILY_API_KEY` | Yes | Company resolution and focused public-signal searches. |
 | `FIRECRAWL_API_KEY` | Yes | Targeted official website, product, and careers-page scraping. |
@@ -47,7 +48,7 @@ Secrets belong only in `.env.local`. That file is ignored by Git. No environment
 | `LANGSMITH_PROJECT` | Yes | Project used to group and find research traces. This build uses `torq-customer-intelligence-agent`. |
 | `LANGSMITH_ENDPOINT` | Yes | LangSmith API base URL for the workspace region; use `https://eu.api.smith.langchain.com` for an EU workspace. |
 
-The app checks this environment contract before research begins. Missing keys produce a visible error; invalid provider authentication is not downgraded to a weak-evidence result.
+The app checks this environment contract before identity normalization or research begins. Missing keys produce a visible error; invalid provider authentication is not downgraded to a weak-evidence result.
 
 ## Commands
 
@@ -72,6 +73,8 @@ securitySignals ───┘
 ```
 
 The four research nodes run in parallel. They use fixed search patterns or fixed first-party page targets; the LLM cannot author queries. Their typed outputs converge at synthesis. The final validation node has no LLM.
+
+Before selection or automatic continuation, discovery candidates pass through one strict structured-output identity-normalization call. The model can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities.
 
 For every company, `researchId` is preserved through resolution, selection, graph state, progress events, backend logs, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
 
