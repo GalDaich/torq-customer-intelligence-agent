@@ -15,16 +15,9 @@ function validReport(): CompanyReport {
     evidenceIds: ["E1"],
     confidence: "high" as const,
   };
-
   return {
     researchId,
-    company: {
-      inputName: "Acme",
-      name: "Acme Security",
-      domain: "acme.example",
-      websiteUrl: "https://acme.example",
-      description: "Security software company",
-    },
+    company: { inputName: "Acme", name: "Acme Security", domain: "acme.example", websiteUrl: "https://acme.example", description: "Security software company" },
     whatTheyDo: claim,
     recentSignals: [],
     hiringSignals: [],
@@ -35,25 +28,9 @@ function validReport(): CompanyReport {
       { point: "Discuss automation", rationale: claim },
       { point: "Ask about response workflows", rationale: claim },
     ],
-    confidenceAndGaps: ["No recent hiring evidence was found."],
-    sources: [
-      {
-        id: "S1",
-        title: "Acme",
-        url: "https://acme.example",
-        publisher: "Acme Security",
-        sourceType: "company" as const,
-        publishedAt: null,
-      },
-    ],
-    evidence: [
-      {
-        id: "E1",
-        sourceId: "S1",
-        excerpt: "Acme builds security automation software.",
-        collectedAt: "2026-08-01T09:00:00.000Z",
-      },
-    ],
+    confidenceAndGaps: ["Dates should be verified."],
+    sources: [{ id: "S1", title: "Acme", url: "https://acme.example", publisher: "Acme", sourceType: "company", publishedAt: null }],
+    evidence: [{ id: "E1", sourceId: "S1", excerpt: "Acme builds security automation software.", collectedAt: "2026-08-01T09:00:00.000Z" }],
   };
 }
 
@@ -63,422 +40,80 @@ describe("strict schemas", () => {
   });
 
   it("rejects uncontracted source fields", () => {
-    expect(() =>
-      SourceSchema.parse({
-        ...validReport().sources[0],
-        rawProviderPayload: { secret: "must not cross the boundary" },
-      }),
-    ).toThrow();
-  });
-
-  it("allows an honest partial report while retaining upper bounds", () => {
-    const report = validReport();
-    report.likelyPainPoints = [];
-    report.talkingPoints = [];
-    report.whatTheyDo = null;
-    expect(CompanyReportSchema.parse(report)).toMatchObject({
-      whatTheyDo: null,
-      likelyPainPoints: [],
-      talkingPoints: [],
-    });
-
-    const tooMany = validReport();
-    tooMany.talkingPoints.push(
-      { point: "Third", rationale: tooMany.whatTheyDo! },
-      { point: "Fourth", rationale: tooMany.whatTheyDo! },
-    );
-    expect(() => CompanyReportSchema.parse(tooMany)).toThrow();
+    expect(() => SourceSchema.parse({
+      ...validReport().sources[0],
+      rawProviderPayload: { secret: "must not cross the boundary" },
+    })).toThrow();
   });
 });
 
-describe("grounding validation", () => {
+describe("demo grounding validation", () => {
   it("accepts a complete claim to evidence to source chain", () => {
     expect(validateGroundedReport(validReport())).toEqual(validReport());
   });
 
-  it("enforces claim-specific freshness at the final report boundary", () => {
-    const researchWindow = {
-      today: "2026-08-01",
-      oneYearAgo: "2025-08-01",
-    };
-    const current = validReport();
-    current.sources[0].publishedAt = "2026-01-10";
-    expect(validateGroundedReport(current, researchWindow)).toEqual(current);
-    expect(validateGroundedReport(validReport(), researchWindow)).toEqual(validReport());
-
-    const old = validReport();
-    old.sources[0].publishedAt = "2025-07-31";
-    expect(() => validateGroundedReport(old, researchWindow)).toThrow(
-      "Company description must cite an eligible current page",
-    );
-  });
-
-  it("restores an undated official page observed during the run", () => {
+  it("accepts old, undated, generic, and multi-evidence public sources", () => {
     const report = validReport();
-    const restored = restoreGroundedReport(report, {
-      today: "2026-08-01",
-      oneYearAgo: "2025-08-01",
-    });
-
-    expect(restored.whatTheyDo).toEqual(report.whatTheyDo);
-    expect(restored.sources).toEqual(report.sources);
-    expect(restored.evidence).toEqual(report.evidence);
-  });
-
-  it("restores a report by omitting dated evidence outside the window", () => {
-    const report = validReport();
-    report.sources[0].publishedAt = "2025-07-31";
-    const restored = restoreGroundedReport(report, {
-      today: "2026-08-01",
-      oneYearAgo: "2025-08-01",
-    });
-
-    expect(restored.whatTheyDo).toBeNull();
-    expect(restored.sources).toEqual([]);
-    expect(restored.evidence).toEqual([]);
-    expect(restored.confidenceAndGaps).toContain(
-      "The company description was omitted because its supporting evidence was unavailable.",
-    );
-  });
-
-  it("rejects an undated announcement as a recent event", () => {
-    const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "Acme product announcement",
-      url: "https://acme.example/news/product-announcement",
-      publisher: "acme.example",
-      sourceType: "news",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "Acme announced a new product.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
-    report.recentSignals = [{
-      category: "product",
-      claim: {
-        text: "Acme announced a new product.",
-        evidenceIds: ["E2"],
-        confidence: "high",
-      },
+    report.sources.push({ id: "S2", title: "Careers", url: "https://jobs.example/acme", publisher: "jobs.example", sourceType: "hiring", publishedAt: "2020-01-01" });
+    report.evidence.push({ id: "E2", sourceId: "S2", excerpt: "Acme lists a Security Engineer opportunity.", collectedAt: "2026-08-01T09:00:00.000Z" });
+    report.hiringSignals = [{
+      roleTitle: "Security Engineer",
+      team: null,
+      location: null,
+      postedAt: null,
+      claim: { text: "Acme lists a Security Engineer opportunity.", evidenceIds: ["E1", "E2"], confidence: "medium" },
+    }];
+    report.technologySignals = [{
+      technology: "Splunk and CrowdStrike",
+      category: "siem",
+      claim: { text: "The evidence mentions Splunk and CrowdStrike.", evidenceIds: ["E2"], confidence: "low" },
+      torqRelevance: { text: "These tools may be useful conversation context.", evidenceIds: ["E1", "E2"], confidence: "low" },
     }];
 
-    expect(() => validateGroundedReport(report, {
-      today: "2026-08-01",
-      oneYearAgo: "2025-08-01",
-    })).toThrow("Recent signal must cite a source published");
-  });
-
-  it("accepts an evidence-free partial report with an explicit gap", () => {
-    const report = validReport();
-    report.whatTheyDo = null;
-    report.recentSignals = [];
-    report.hiringSignals = [];
-    report.securitySignals = [];
-    report.technologySignals = [];
-    report.likelyPainPoints = [];
-    report.talkingPoints = [];
-    report.confidenceAndGaps = ["Collected findings could not be safely retained."];
-    report.sources = [];
-    report.evidence = [];
-
     expect(validateGroundedReport(report)).toEqual(report);
+    expect(restoreGroundedReport(report).hiringSignals).toHaveLength(1);
+    expect(restoreGroundedReport(report).technologySignals).toHaveLength(1);
   });
 
   it("rejects evidence pointing to an unknown source", () => {
     const report = validReport();
     report.evidence[0].sourceId = "S404";
-
     expect(() => validateGroundedReport(report)).toThrow(GroundingValidationError);
   });
 
   it("rejects claims pointing to unknown evidence", () => {
     const report = validReport();
     report.whatTheyDo!.evidenceIds = ["E404"];
-
-    expect(() => validateGroundedReport(report)).toThrow(
-      "Claim references unknown evidence E404.",
-    );
+    expect(() => validateGroundedReport(report)).toThrow("Claim references unknown evidence E404.");
   });
 
   it("rejects duplicate lineage IDs", () => {
     const report = validReport();
     report.sources.push({ ...report.sources[0] });
-
     expect(() => validateGroundedReport(report)).toThrow("Source IDs must be unique.");
   });
 
-  it("removes uncited corpus records before final validation", () => {
+  it("removes uncited corpus records from the user-facing report", () => {
     const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "Generic careers page",
-      url: "https://acme.example/careers",
-      publisher: "acme.example",
-      sourceType: "hiring",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "Explore open positions and join our team.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
-
+    report.sources.push({ id: "S2", title: "Careers", url: "https://acme.example/careers", publisher: "acme.example", sourceType: "hiring", publishedAt: null });
+    report.evidence.push({ id: "E2", sourceId: "S2", excerpt: "Explore open positions.", collectedAt: "2026-08-01T09:00:00.000Z" });
     expect(retainCitedLineage(report)).toEqual(validReport());
-    expect(() => validateGroundedReport(report)).toThrow("must not retain uncited evidence");
   });
 
-  it("rejects a generic careers page as hiring evidence", () => {
+  it("omits only findings with invented evidence and keeps the rest", () => {
     const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "Careers at Acme",
-      url: "https://acme.example/careers",
-      publisher: "acme.example",
-      sourceType: "hiring",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "Acme lists opportunities across its security organization.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
     report.hiringSignals = [{
-      roleTitle: "Security Engineer",
+      roleTitle: "Invented role",
       team: null,
       location: null,
       postedAt: null,
-      claim: { text: "Acme is hiring a Security Engineer.", evidenceIds: ["E2"], confidence: "low" },
+      claim: { text: "Invented role", evidenceIds: ["E404"], confidence: "low" },
     }];
-
-    expect(() => validateGroundedReport(report)).toThrow("specific job or article");
-  });
-
-  it("rejects the same position repeated from multiple sources", () => {
-    const report = validReport();
-    report.sources.push(
-      {
-        id: "S2",
-        title: "Security Engineer at Acme",
-        url: "https://linkedin.com/jobs/view/security-engineer-123",
-        publisher: "linkedin.com",
-        sourceType: "hiring",
-        publishedAt: null,
-      },
-      {
-        id: "S3",
-        title: "Security Engineer - Acme",
-        url: "https://indeed.com/viewjob?jk=456",
-        publisher: "indeed.com",
-        sourceType: "hiring",
-        publishedAt: null,
-      },
-    );
-    report.evidence.push(
-      {
-        id: "E2",
-        sourceId: "S2",
-        excerpt: "Acme is hiring a Security Engineer in Tel Aviv.",
-        collectedAt: "2026-08-01T09:00:00.000Z",
-      },
-      {
-        id: "E3",
-        sourceId: "S3",
-        excerpt: "The Security Engineer role at Acme is based in Tel Aviv and supports cloud security.",
-        collectedAt: "2026-08-01T09:00:00.000Z",
-      },
-    );
-    report.hiringSignals = [
-      {
-        roleTitle: "Security Engineer",
-        team: null,
-        location: "Tel Aviv",
-        postedAt: null,
-        claim: { text: "Acme is hiring a Security Engineer.", evidenceIds: ["E2"], confidence: "high" },
-      },
-      {
-        roleTitle: "Security Engineer",
-        team: "Cloud Security",
-        location: "Tel Aviv",
-        postedAt: null,
-        claim: { text: "Acme lists a Security Engineer opening.", evidenceIds: ["E3"], confidence: "high" },
-      },
-    ];
-
-    expect(() => validateGroundedReport(report)).toThrow("appears more than once");
-  });
-
-  it("requires one strongest evidence record for each hiring role", () => {
-    const report = validReport();
-    report.sources.push(
-      {
-        id: "S2",
-        title: "Security Engineer at Acme",
-        url: "https://linkedin.com/jobs/view/security-engineer-123",
-        publisher: "linkedin.com",
-        sourceType: "hiring",
-        publishedAt: null,
-      },
-      {
-        id: "S3",
-        title: "Security Engineer - Acme",
-        url: "https://indeed.com/viewjob?jk=456",
-        publisher: "indeed.com",
-        sourceType: "hiring",
-        publishedAt: null,
-      },
-    );
-    report.evidence.push(
-      {
-        id: "E2",
-        sourceId: "S2",
-        excerpt: "Acme is hiring a Security Engineer in Tel Aviv.",
-        collectedAt: "2026-08-01T09:00:00.000Z",
-      },
-      {
-        id: "E3",
-        sourceId: "S3",
-        excerpt: "An Acme Security Engineer role is open in Tel Aviv.",
-        collectedAt: "2026-08-01T09:00:00.000Z",
-      },
-    );
-    report.hiringSignals = [{
-      roleTitle: "Security Engineer",
-      team: null,
-      location: "Tel Aviv",
-      postedAt: null,
-      claim: {
-        text: "Acme is hiring a Security Engineer.",
-        evidenceIds: ["E2", "E3"],
-        confidence: "high",
-      },
-    }];
-
-    expect(() => validateGroundedReport(report)).toThrow("exactly one strongest evidence");
-  });
-
-  it("accepts one specific shared evidence record for a technology signal", () => {
-    const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "Acme security architecture",
-      url: "https://acme.example/engineering/security-architecture",
-      publisher: "acme.example",
-      sourceType: "technology",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "Acme uses Splunk for security monitoring.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
-    report.technologySignals = [{
-      technology: "Splunk",
-      category: "siem",
-      claim: {
-        text: "Acme uses Splunk for security monitoring.",
-        evidenceIds: ["E2"],
-        confidence: "high",
-      },
-      torqRelevance: {
-        text: "Splunk may be an alert-ingestion and response orchestration surface.",
-        evidenceIds: ["E2"],
-        confidence: "medium",
-      },
-    }];
-
-    expect(validateGroundedReport(report, {
-      today: "2026-08-01",
-      oneYearAgo: "2025-08-01",
-    }).technologySignals).toHaveLength(1);
-  });
-
-  it("rejects generic or duplicate technology signals", () => {
-    const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "Engineering",
-      url: "https://acme.example/engineering",
-      publisher: "acme.example",
-      sourceType: "technology",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "Acme engineers use Splunk.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
-    const signal = {
-      technology: "Splunk",
-      category: "siem" as const,
-      claim: {
-        text: "Acme uses Splunk.",
-        evidenceIds: ["E2"],
-        confidence: "medium" as const,
-      },
-      torqRelevance: {
-        text: "Splunk may be an orchestration surface.",
-        evidenceIds: ["E2"],
-        confidence: "low" as const,
-      },
-    };
-    report.technologySignals = [signal];
-
-    expect(() => validateGroundedReport(report)).toThrow("specific technical source");
-
-    report.sources[1] = {
-      ...report.sources[1],
-      title: "Acme security architecture",
-      url: "https://acme.example/engineering/security-architecture",
-    };
-    report.technologySignals = [signal, { ...signal, technology: "splunk" }];
-    expect(() => validateGroundedReport(report)).toThrow("appears more than once");
-  });
-
-  it("restores the Rapyd failure mode by omitting grouped technologies", () => {
-    const report = validReport();
-    report.sources.push({
-      id: "S2",
-      title: "DevOps Engineer - Acme",
-      url: "https://acme.example/careers/positions/devops-engineer",
-      publisher: "acme.example",
-      sourceType: "technology",
-      publishedAt: null,
-    });
-    report.evidence.push({
-      id: "E2",
-      sourceId: "S2",
-      excerpt: "The role uses Terraform, Ansible, and CloudFormation.",
-      collectedAt: "2026-08-01T09:00:00.000Z",
-    });
-    report.technologySignals = [{
-      technology: "Terraform, Ansible, and CloudFormation",
-      category: "devops",
-      claim: {
-        text: "Acme lists Terraform, Ansible, and CloudFormation.",
-        evidenceIds: ["E2"],
-        confidence: "high",
-      },
-      torqRelevance: {
-        text: "The tools may identify an infrastructure automation surface.",
-        evidenceIds: ["E2"],
-        confidence: "medium",
-      },
-    }];
-
     const restored = restoreGroundedReport(report);
-
-    expect(restored.technologySignals).toEqual([]);
-    expect(restored.evidence.map((evidence) => evidence.id)).toEqual(["E1"]);
+    expect(restored.whatTheyDo).toEqual(report.whatTheyDo);
+    expect(restored.hiringSignals).toEqual([]);
     expect(restored.confidenceAndGaps).toContain(
-      "Some technology signals were omitted because they grouped multiple tools, were duplicate, generic, or lacked one specific supporting source.",
+      "Some findings were omitted because their evidence references were unavailable.",
     );
   });
 });

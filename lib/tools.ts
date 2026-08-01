@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   canonicalEvidenceUrl,
   evidenceFingerprint,
-  isGenericEvidenceSource,
 } from "./evidence-quality";
 import {
   EvidenceSchema,
@@ -10,11 +9,6 @@ import {
   type Evidence,
   type Source,
 } from "./schemas";
-import {
-  filterCorpusToCurrentStateWindow,
-  filterCorpusToResearchWindow,
-  type ResearchWindow,
-} from "./research-window";
 
 const TavilyResponseSchema = z
   .object({
@@ -74,14 +68,8 @@ export type TavilySearchInput = {
   topic?: "general" | "news";
   searchDepth?: "basic" | "advanced" | "fast" | "ultra-fast";
   chunksPerSource?: 1 | 2 | 3;
-  timeRange?: "day" | "week" | "month" | "year";
-  researchWindow?: ResearchWindow;
-  freshnessPolicy?: "dated_event" | "current_state";
-  companyDomain?: string;
-  allowUndatedJobPosting?: boolean;
   includeDomains?: string[];
   excludeDomains?: string[];
-  minimumScore?: number;
   signal?: AbortSignal;
 };
 
@@ -293,13 +281,6 @@ export async function searchTavily(
         ...(input.searchDepth === "advanced" && input.chunksPerSource
           ? { chunks_per_source: input.chunksPerSource }
           : {}),
-        ...(input.timeRange ? { time_range: input.timeRange } : {}),
-        ...(input.researchWindow && input.freshnessPolicy !== "current_state"
-          ? {
-              start_date: input.researchWindow.oneYearAgo,
-              end_date: input.researchWindow.today,
-            }
-          : {}),
         ...(input.includeDomains ? { include_domains: input.includeDomains } : {}),
         ...(input.excludeDomains ? { exclude_domains: input.excludeDomains } : {}),
       }),
@@ -318,22 +299,8 @@ export async function searchTavily(
   const seenUrls = new Set<string>();
 
   for (const result of parsed.data.results) {
-    if (
-      input.minimumScore !== undefined &&
-      result.score !== undefined &&
-      result.score < input.minimumScore
-    ) {
-      continue;
-    }
     const canonicalUrl = canonicalEvidenceUrl(result.url);
     if (seenUrls.has(canonicalUrl)) continue;
-    if (isGenericEvidenceSource({
-      sourceType: input.sourceType,
-      title: result.title,
-      url: canonicalUrl,
-    })) {
-      continue;
-    }
     seenUrls.add(canonicalUrl);
     const ordinal = sources.length + 1;
     const source = SourceSchema.parse({
@@ -363,17 +330,7 @@ export async function searchTavily(
     }
   }
 
-  const corpus = { sources, evidence };
-  if (!input.researchWindow) return corpus;
-  // Event evidence needs a publication date. Current-state searches may also retain an
-  // undated official page or specific job posting that was observed during this run.
-  return input.freshnessPolicy === "current_state" && input.companyDomain
-    ? filterCorpusToCurrentStateWindow(corpus, input.researchWindow, {
-        companyDomain: input.companyDomain,
-        allowOfficialPage: true,
-        allowJobPosting: input.allowUndatedJobPosting,
-      })
-    : filterCorpusToResearchWindow(corpus, input.researchWindow);
+  return { sources, evidence };
 }
 
 export async function mapFirecrawl(
@@ -435,10 +392,6 @@ export async function scrapeFirecrawl(
     idPrefix: string;
     sourceType: Source["sourceType"];
     maxAge?: number;
-    researchWindow?: ResearchWindow;
-    freshnessPolicy?: "dated_event" | "current_state";
-    companyDomain?: string;
-    allowUndatedJobPosting?: boolean;
     signal?: AbortSignal;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
@@ -498,15 +451,7 @@ export async function scrapeFirecrawl(
     }),
   );
 
-  const corpus = { sources: [source], evidence };
-  if (!input.researchWindow) return corpus;
-  return input.freshnessPolicy === "current_state" && input.companyDomain
-    ? filterCorpusToCurrentStateWindow(corpus, input.researchWindow, {
-        companyDomain: input.companyDomain,
-        allowOfficialPage: true,
-        allowJobPosting: input.allowUndatedJobPosting,
-      })
-    : filterCorpusToResearchWindow(corpus, input.researchWindow);
+  return { sources: [source], evidence };
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {

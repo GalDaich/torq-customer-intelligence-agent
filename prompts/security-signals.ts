@@ -1,5 +1,4 @@
 import type { ResolvedCompany } from "../lib/schemas";
-import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
@@ -16,12 +15,12 @@ ${TORQ_RELEVANCE_FRAME}
 
 <task>
 - Classify only explicit security-team, security-product, compliance, infrastructure, incident, or automation evidence.
-- Require a specific page, article, report, advisory, job posting, or announcement—not a generic index page or vendor boilerplate.
+- Prefer a specific page, article, report, advisory, job posting, or announcement, but use any relevant supplied public source.
 - Keep the factual signal separate from why it may matter.
 - "Why it matters" must be a bounded inference supported by the same evidence; do not assert an undisclosed tool, incident, architecture, budget, pain point, or buying intent.
 - Consolidate multiple sources describing the same underlying fact into one signal using the strongest source.
 - Prioritize signals that illuminate triage, investigation, response, remediation, case management, compliance operations, or coordination across security tools.
-- Incidents and announcements always require an in-window publication date. Undated evidence may support only a present-state security fact from an eligible official page or specific live job posting observed during this run.
+- Preserve explicit dates and status, but do not reject a security signal solely because it is older or undated.
 </task>
 
 Silently check specificity, uniqueness, inference boundaries, and evidence IDs before returning only the structured output.
@@ -30,13 +29,12 @@ Silently check specificity, uniqueness, inference boundaries, and evidence IDs b
 export function securitySignalMessages(
   company: ResolvedCompany,
   corpus: ResearchCorpus,
-  researchWindow: ResearchWindow,
 ) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
     },
   ];
 }

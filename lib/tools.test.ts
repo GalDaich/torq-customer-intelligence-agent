@@ -50,7 +50,7 @@ describe("provider normalization", () => {
     expect(corpus).not.toHaveProperty("request_id");
   });
 
-  it("sends precision options and removes low-score Tavily results", async () => {
+  it("sends bounded provider options and retains low-score Tavily results", async () => {
     let requestBody: Record<string, unknown> = {};
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -81,12 +81,7 @@ describe("provider normalization", () => {
         sourceType: "news",
         searchDepth: "advanced",
         chunksPerSource: 2,
-        researchWindow: {
-          today: "2026-08-01",
-          oneYearAgo: "2025-08-01",
-        },
         excludeDomains: ["noise.example"],
-        minimumScore: 0.45,
       },
       { apiKey: "test-key", fetchImpl },
     );
@@ -94,17 +89,20 @@ describe("provider normalization", () => {
     expect(requestBody).toMatchObject({
       search_depth: "advanced",
       chunks_per_source: 2,
-      start_date: "2025-08-01",
-      end_date: "2026-08-01",
       exclude_domains: ["noise.example"],
       include_answer: false,
       include_raw_content: false,
     });
-    expect(corpus.sources.map((source) => source.title)).toEqual(["Strong specific result"]);
+    expect(requestBody).not.toHaveProperty("start_date");
+    expect(requestBody).not.toHaveProperty("end_date");
+    expect(corpus.sources.map((source) => source.title)).toEqual([
+      "Strong specific result",
+      "Weak result",
+    ]);
     expect(corpus.evidence[0].excerpt).not.toContain("<chunk");
   });
 
-  it("drops Tavily results that are undated or outside the exact runtime window", async () => {
+  it("retains Tavily results regardless of age or missing publication date", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({
         results: [
@@ -134,21 +132,19 @@ describe("provider normalization", () => {
         query: "Acme",
         idPrefix: "REC1",
         sourceType: "news",
-        researchWindow: {
-          today: "2026-08-01",
-          oneYearAgo: "2025-08-01",
-        },
       },
       { apiKey: "test-key", fetchImpl },
     );
 
     expect(corpus.sources.map((source) => source.title)).toEqual([
       "Current announcement",
+      "Outside-window announcement",
+      "Undated announcement",
     ]);
-    expect(corpus.evidence).toHaveLength(1);
+    expect(corpus.evidence).toHaveLength(3);
   });
 
-  it("keeps an undated official current-state result without sending date filters", async () => {
+  it("keeps an undated official result without sending date filters", async () => {
     let requestBody: Record<string, unknown> = {};
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -166,12 +162,6 @@ describe("provider normalization", () => {
         query: "Acme security architecture",
         idPrefix: "TEC1",
         sourceType: "technology",
-        researchWindow: {
-          today: "2026-08-01",
-          oneYearAgo: "2025-08-01",
-        },
-        freshnessPolicy: "current_state",
-        companyDomain: "acme.example",
       },
       { apiKey: "test-key", fetchImpl },
     );
@@ -246,7 +236,7 @@ describe("provider normalization", () => {
     });
   });
 
-  it("does not treat an undated scraped page as current evidence", async () => {
+  it("keeps an undated scraped page as usable demo evidence", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({
         success: true,
@@ -263,18 +253,15 @@ describe("provider normalization", () => {
         url: "https://acme.example/update",
         idPrefix: "RFP1",
         sourceType: "news",
-        researchWindow: {
-          today: "2026-08-01",
-          oneYearAgo: "2025-08-01",
-        },
       },
       { apiKey: "test-key", fetchImpl },
     );
 
-    expect(corpus).toEqual({ sources: [], evidence: [] });
+    expect(corpus.sources).toHaveLength(1);
+    expect(corpus.evidence).toHaveLength(1);
   });
 
-  it("uses an undated official page as present-state evidence when explicitly allowed", async () => {
+  it("uses an undated official page without an eligibility policy", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({
         success: true,
@@ -291,12 +278,6 @@ describe("provider normalization", () => {
         url: "https://acme.example/platform",
         idPrefix: "FP1",
         sourceType: "company",
-        researchWindow: {
-          today: "2026-08-01",
-          oneYearAgo: "2025-08-01",
-        },
-        freshnessPolicy: "current_state",
-        companyDomain: "acme.example",
       },
       { apiKey: "test-key", fetchImpl },
     );
@@ -305,7 +286,7 @@ describe("provider normalization", () => {
     expect(corpus.evidence).toHaveLength(1);
   });
 
-  it("rejects generic hiring pages before they become evidence", async () => {
+  it("retains generic hiring pages alongside specific roles", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({
         results: [
@@ -328,9 +309,11 @@ describe("provider normalization", () => {
       { apiKey: "test-key", fetchImpl },
     );
 
-    expect(corpus.sources).toHaveLength(1);
-    expect(corpus.sources[0].title).toBe("Security Engineer");
-    expect(corpus.sources[0].url).toBe("https://acme.example/careers/security-engineer-123");
+    expect(corpus.sources).toHaveLength(2);
+    expect(corpus.sources.map((source) => source.title)).toEqual([
+      "Careers at Acme",
+      "Security Engineer",
+    ]);
   });
 
   it("deduplicates canonical URLs and repeated excerpts across corpora", () => {

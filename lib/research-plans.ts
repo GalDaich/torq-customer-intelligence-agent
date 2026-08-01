@@ -1,18 +1,9 @@
 import type { ResolvedCompany } from "./schemas";
-import type { ResearchWindow } from "./research-window";
 import type { TavilySearchInput } from "./tools";
 
-// Search plans are fixed code rather than model output. That keeps provider spend,
-// recency, source breadth, and excluded aggregators predictable for every company.
+// Search plans are fixed code rather than model output. That keeps provider spend and
+// source breadth predictable while allowing the demo to use any relevant public result.
 export type FocusedSearchPlan = Omit<TavilySearchInput, "idPrefix" | "sourceType">;
-
-const JOB_AGGREGATORS = [
-  "glassdoor.com",
-  "indeed.com",
-  "linkedin.com",
-  "simplyhired.com",
-  "ziprecruiter.com",
-];
 
 function identity(company: ResolvedCompany): string {
   return `"${company.name}" ${company.domain}`;
@@ -55,132 +46,83 @@ const advancedSearch = {
   searchDepth: "advanced" as const,
   chunksPerSource: 2 as const,
   maxResults: 5,
-  minimumScore: 0.45,
 };
 
 const basicSearch = {
   searchDepth: "basic" as const,
   maxResults: 5,
-  minimumScore: 0.45,
 };
 
-export function recentSignalSearchPlan(
-  company: ResolvedCompany,
-  researchWindow: ResearchWindow,
-): FocusedSearchPlan[] {
+export function recentSignalSearchPlan(company: ResolvedCompany): FocusedSearchPlan[] {
   const target = identity(company);
   return [
     {
       ...basicSearch,
       query: `site:${company.domain} "${company.name}" launches announces acquisition funding partnership leadership product update press release`,
       topic: "news",
-      researchWindow,
-      freshnessPolicy: "dated_event",
-      minimumScore: 0.25,
     },
     {
       ...basicSearch,
       query: `site:${company.domain} "${company.name}" blog report guide research customer story security compliance company update`,
       topic: "news",
-      researchWindow,
-      freshnessPolicy: "dated_event",
-      minimumScore: 0.25,
     },
     {
       ...advancedSearch,
-      query: `${target} recent funding product launch acquisition leadership announcement`,
+      query: `${target} funding product launch acquisition leadership announcement`,
       topic: "news",
-      researchWindow,
-      freshnessPolicy: "dated_event",
-      minimumScore: 0.35,
     },
   ];
 }
 
-export function hiringSignalSearchPlan(
-  company: ResolvedCompany,
-  researchWindow: ResearchWindow,
-): FocusedSearchPlan[] {
+export function hiringSignalSearchPlan(company: ResolvedCompany): FocusedSearchPlan[] {
   const target = identity(company);
   return [
     {
       ...advancedSearch,
       query: `${target} open security SOC incident response cloud security identity job role`,
       topic: "general",
-      excludeDomains: JOB_AGGREGATORS,
-      researchWindow,
-      freshnessPolicy: "current_state",
-      companyDomain: company.domain,
-      allowUndatedJobPosting: true,
     },
     {
       ...advancedSearch,
       query: `${target} open platform engineering DevSecOps infrastructure IT automation job role`,
       topic: "general",
-      excludeDomains: JOB_AGGREGATORS,
-      researchWindow,
-      freshnessPolicy: "current_state",
-      companyDomain: company.domain,
-      allowUndatedJobPosting: true,
     },
   ];
 }
 
-export function securitySignalSearchPlan(
-  company: ResolvedCompany,
-  researchWindow: ResearchWindow,
-): FocusedSearchPlan[] {
+export function securitySignalSearchPlan(company: ResolvedCompany): FocusedSearchPlan[] {
   const target = identity(company);
   return [
     {
       ...advancedSearch,
       query: `${target} security operations SOC incident response compliance security team automation`,
       topic: "general",
-      researchWindow,
-      freshnessPolicy: "current_state",
-      companyDomain: company.domain,
-      allowUndatedJobPosting: true,
     },
     {
       ...basicSearch,
       query: `${target} breach vulnerability cloud security identity phishing threat response`,
       topic: "news",
-      researchWindow,
-      freshnessPolicy: "dated_event",
     },
   ];
 }
 
-export function technologySignalSearchPlan(
-  company: ResolvedCompany,
-  researchWindow: ResearchWindow,
-): FocusedSearchPlan[] {
+export function technologySignalSearchPlan(company: ResolvedCompany): FocusedSearchPlan[] {
   const target = identity(company);
   return [
     {
       ...advancedSearch,
       query: `${target} publicly used SIEM EDR XDR IAM cloud security tools technology stack`,
       topic: "general",
-      researchWindow,
-      freshnessPolicy: "dated_event",
     },
     {
       ...basicSearch,
       query: `site:${company.domain} engineering architecture AWS Azure GCP Kubernetes security stack`,
       topic: "general",
-      researchWindow,
-      freshnessPolicy: "current_state",
-      companyDomain: company.domain,
     },
     {
       ...basicSearch,
       query: `${target} jobs Splunk Sentinel CrowdStrike Okta Wiz ServiceNow Jira Slack`,
       topic: "general",
-      excludeDomains: JOB_AGGREGATORS,
-      researchWindow,
-      freshnessPolicy: "current_state",
-      companyDomain: company.domain,
-      allowUndatedJobPosting: true,
     },
   ];
 }

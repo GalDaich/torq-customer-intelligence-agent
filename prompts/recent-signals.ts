@@ -1,42 +1,39 @@
 import type { ResolvedCompany } from "../lib/schemas";
-import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES } from "./shared";
 
-// Recent-signal classification selects specific dated events, not generic news indexes or
-// several articles describing the same underlying event.
+// Recent-signal classification favors useful company developments without imposing a
+// hard date window that can leave a demo report empty.
 const SYSTEM_PROMPT = `
 <role>
-You identify concrete, current company events that can improve a customer conversation.
+You identify concrete company developments that can improve a customer conversation.
 </role>
 
 ${GROUNDED_RESEARCH_RULES}
 
 <task>
 - Classify specific news, funding, product, or leadership events, plus meaningful dated company-authored reports, guides, security or compliance updates, and customer stories that provide current conversation context.
-- Require an individual article or announcement that clearly describes the event.
-- Do not treat a homepage, newsroom index, blog index, search page, company profile, or undated summary as a recent event.
+- Prefer an individual article or announcement, but use relevant company pages, indexes, profiles, and undated summaries when they provide useful context.
 - One underlying event equals one signal, even when search returns multiple publishers or syndicated copies.
 - Prefer the original company announcement; otherwise use the most authoritative dated article.
-- Treat a dated, item-specific post from the company's own blog, newsroom, or press-release section as a strong source. An index page may help discovery but cannot support a signal.
-- Exclude generic SEO listicles, broad educational posts, and recycled summaries that do not reveal a concrete company update, point of view, product direction, customer outcome, or operating priority.
-- Do not infer that an event is recent when the supplied evidence lacks a usable date or clear recency context.
+- Treat a company-authored blog, newsroom, press-release, report, guide, or customer-story page as useful context whether or not a publication date was extracted.
+- Exclude irrelevant pages, but do not reject a relevant finding solely because the source is broad, syndicated, or undated.
+- When a date is unknown, describe the development without inventing when it happened.
 - Prefer events that can change operational scale or complexity—funding, acquisitions, expansion, leadership changes, product launches, and major partnerships—without inventing a security impact.
 </task>
 
-Silently check specificity, recency, uniqueness, and evidence IDs before returning only the structured output.
+Silently check usefulness, uniqueness, and evidence IDs before returning only the structured output.
 `.trim();
 
 export function recentSignalMessages(
   company: ResolvedCompany,
   corpus: ResearchCorpus,
-  researchWindow: ResearchWindow,
 ) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
     },
   ];
 }

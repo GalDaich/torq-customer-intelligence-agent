@@ -1,5 +1,4 @@
 import type { ResolvedCompany } from "../lib/schemas";
-import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 
 // All specialist prompts inherit the same evidence and trust rules so changing one task
@@ -10,13 +9,10 @@ export const GROUNDED_RESEARCH_RULES = `
 2. Use only the supplied sources and immutable evidence records.
 3. Never create, alter, merge, or guess an evidence ID, source, URL, title, excerpt, date, role, or company fact.
 4. Every factual claim must cite evidence IDs whose excerpts directly support the entire claim.
-5. Prefer strong, item-specific evidence: an official product page, an individual article or announcement, a named report, or an individual job posting.
-6. A homepage may support only basic company identity and what-the-company-does claims. Index, search, category, newsroom, blog index, and generic careers pages do not support specific events or open roles.
-7. When multiple sources describe the same underlying event, article, announcement, or job, produce one finding and cite only the single strongest source. Prefer the original company or publisher item over a syndication page, social copy, or job aggregator.
-8. Omit weak, ambiguous, stale, or duplicate findings. Record material limitations in gaps.
-9. Pain points and talking points are labeled inferences and still require direct supporting evidence.
-10. Keep missing dates, locations, teams, and other details unknown rather than estimating them.
-11. Dated articles and events must have publishedAt inside the supplied researchWindow, including both boundary dates. An undated source may support only a present-state claim when it is an eligible official company page or specific live job posting observed during this run. collectedAt is an observation time, never a claimed publication date.
+5. Prefer specific first-party pages and original reporting when available, but use any relevant supplied public source when it helps produce a useful demo report.
+6. Consolidate obvious duplicates, but do not discard a supported finding only because its source is undated, older, syndicated, an index, or an aggregator.
+7. Pain points and talking points are evidence-informed hypotheses. Label them as hypotheses and cite the evidence that motivated them; the evidence need not prove the inferred internal problem.
+8. Keep missing dates, locations, teams, and other details unknown rather than estimating them.
 </non_negotiable_rules>
 `.trim();
 
@@ -24,18 +20,16 @@ export const TORQ_RELEVANCE_FRAME = `
 <torq_relevance_frame>
 Torq is an AI SOC and security-hyperautomation platform that coordinates a customer's existing security stack. Its relevant operating areas include alert triage, investigation, containment, remediation, case management, and cross-tool workflows spanning SIEM, EDR/XDR, cloud security, identity, email security, threat intelligence, vulnerability management, ticketing, and collaboration systems.
 
-Use this frame only to assess why target-company evidence may matter for a Torq conversation. It is not evidence about the target company. Never claim that the company has manual work, alert fatigue, fragmented tools, a Torq-compatible integration, budget, urgency, or buying intent unless supplied evidence directly supports that claim. A named technology is an integration surface, not proof of a problem.
+Use this frame only to assess why target-company evidence may matter for a Torq conversation. It is not evidence about the target company. Never present manual work, alert fatigue, fragmented tools, a Torq-compatible integration, budget, urgency, or buying intent as a known fact unless supplied evidence directly supports it. An explicitly labeled hypothesis or exploratory question may connect retrieved company evidence to a plausible Torq conversation, but it must not imply proof. A named technology is an integration surface, not proof of a problem.
 </torq_relevance_frame>
 `.trim();
 
 export function evidenceBundle(
   company: ResolvedCompany,
   corpus: ResearchCorpus,
-  researchWindow: ResearchWindow,
 ): string {
   return JSON.stringify(
     {
-      researchWindow,
       company,
       sources: corpus.sources,
       evidence: corpus.evidence,
