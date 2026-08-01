@@ -11,6 +11,7 @@ import {
   type Source,
 } from "./schemas";
 import {
+  filterCorpusToCurrentStateWindow,
   filterCorpusToResearchWindow,
   type ResearchWindow,
 } from "./research-window";
@@ -75,6 +76,9 @@ export type TavilySearchInput = {
   chunksPerSource?: 1 | 2 | 3;
   timeRange?: "day" | "week" | "month" | "year";
   researchWindow?: ResearchWindow;
+  freshnessPolicy?: "dated_event" | "current_state";
+  companyDomain?: string;
+  allowUndatedJobPosting?: boolean;
   includeDomains?: string[];
   excludeDomains?: string[];
   minimumScore?: number;
@@ -290,7 +294,7 @@ export async function searchTavily(
           ? { chunks_per_source: input.chunksPerSource }
           : {}),
         ...(input.timeRange ? { time_range: input.timeRange } : {}),
-        ...(input.researchWindow
+        ...(input.researchWindow && input.freshnessPolicy !== "current_state"
           ? {
               start_date: input.researchWindow.oneYearAgo,
               end_date: input.researchWindow.today,
@@ -360,11 +364,16 @@ export async function searchTavily(
   }
 
   const corpus = { sources, evidence };
-  // Tavily's date parameters narrow retrieval, but local filtering is the enforcement
-  // boundary. Undated, future, and out-of-window results never reach research prompts.
-  return input.researchWindow
-    ? filterCorpusToResearchWindow(corpus, input.researchWindow)
-    : corpus;
+  if (!input.researchWindow) return corpus;
+  // Event evidence needs a publication date. Current-state searches may also retain an
+  // undated official page or specific job posting that was observed during this run.
+  return input.freshnessPolicy === "current_state" && input.companyDomain
+    ? filterCorpusToCurrentStateWindow(corpus, input.researchWindow, {
+        companyDomain: input.companyDomain,
+        allowOfficialPage: true,
+        allowJobPosting: input.allowUndatedJobPosting,
+      })
+    : filterCorpusToResearchWindow(corpus, input.researchWindow);
 }
 
 export async function mapFirecrawl(
@@ -427,6 +436,9 @@ export async function scrapeFirecrawl(
     sourceType: Source["sourceType"];
     maxAge?: number;
     researchWindow?: ResearchWindow;
+    freshnessPolicy?: "dated_event" | "current_state";
+    companyDomain?: string;
+    allowUndatedJobPosting?: boolean;
     signal?: AbortSignal;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
@@ -487,11 +499,14 @@ export async function scrapeFirecrawl(
   );
 
   const corpus = { sources: [source], evidence };
-  // A scraped page qualifies only when its metadata carries a usable date inside the
-  // runtime window. Collection time is not treated as publication time.
-  return input.researchWindow
-    ? filterCorpusToResearchWindow(corpus, input.researchWindow)
-    : corpus;
+  if (!input.researchWindow) return corpus;
+  return input.freshnessPolicy === "current_state" && input.companyDomain
+    ? filterCorpusToCurrentStateWindow(corpus, input.researchWindow, {
+        companyDomain: input.companyDomain,
+        allowOfficialPage: true,
+        allowJobPosting: input.allowUndatedJobPosting,
+      })
+    : filterCorpusToResearchWindow(corpus, input.researchWindow);
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {

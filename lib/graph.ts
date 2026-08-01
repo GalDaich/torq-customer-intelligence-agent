@@ -292,6 +292,8 @@ async function scrapeFirstParty(
         idPrefix: `FP${index + 1}`,
         sourceType: target.sourceType,
         researchWindow,
+        freshnessPolicy: "current_state",
+        companyDomain: company.domain,
         signal,
       }),
     ),
@@ -308,7 +310,7 @@ async function scrapeFirstParty(
       throw result.reason;
     } else {
       gaps.push(
-        `The ${targets[index].label} did not yield dated evidence from ${researchWindowLabel(researchWindow)}.`,
+        `The ${targets[index].label} did not yield usable current first-party evidence.`,
       );
     }
   });
@@ -361,6 +363,7 @@ async function scrapeRecentFirstParty(
         idPrefix: `RFP${index + 1}`,
         sourceType: "news",
         researchWindow,
+        freshnessPolicy: "dated_event",
         signal,
       }),
     ),

@@ -122,6 +122,51 @@ describe("candidate discovery", () => {
     });
   });
 
+  it("uses homepage evidence instead of an earlier support result for one domain", () => {
+    const candidates = candidatesFromCorpus("monday.com", researchId, {
+      sources: [
+        {
+          id: "RES-S1",
+          title: "monday.com support",
+          url: "https://support.monday.com/hc/en-us/articles/example",
+          publisher: "support.monday.com",
+          sourceType: "other",
+          publishedAt: null,
+        },
+        {
+          id: "RES-S2",
+          title: "monday.com | Work management platform",
+          url: "https://monday.com/",
+          publisher: "monday.com",
+          sourceType: "other",
+          publishedAt: null,
+        },
+      ],
+      evidence: [
+        {
+          id: "RES-E1",
+          sourceId: "RES-S1",
+          excerpt: "This page provides support information for monday.com.",
+          collectedAt: "2026-08-01T09:00:00.000Z",
+        },
+        {
+          id: "RES-E2",
+          sourceId: "RES-S2",
+          excerpt: "monday.com provides a work management platform for teams.",
+          collectedAt: "2026-08-01T09:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      domain: "monday.com",
+      websiteUrl: "https://monday.com",
+      description: "monday.com provides a work management platform for teams.",
+    });
+    expect(candidates[0].sourceIds).toEqual(["RES-S1", "RES-S2"]);
+  });
+
   it("groups subdomains under an explicitly entered domain", () => {
     const candidates = candidatesFromCorpus("rapid7.com", researchId, {
       sources: [

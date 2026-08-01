@@ -1,5 +1,9 @@
 import { z } from "zod";
 import type { Evidence, Source } from "./schemas";
+import {
+  isGenericEvidenceSource,
+  isSpecificJobPostingSource,
+} from "./evidence-quality";
 
 // Research uses one UTC calendar window per company run. Computing it once prevents a
 // long-running graph from crossing midnight with different dates in different nodes.
@@ -35,6 +39,12 @@ export type EvidenceCorpus = {
   evidence: Evidence[];
 };
 
+export type CurrentStateSourcePolicy = {
+  companyDomain: string;
+  allowOfficialPage?: boolean;
+  allowJobPosting?: boolean;
+};
+
 export function createResearchWindow(now: Date = new Date()): ResearchWindow {
   if (Number.isNaN(now.getTime())) throw new Error("Research start time must be valid.");
 
@@ -66,6 +76,54 @@ export function sourceIsWithinResearchWindow(
   return publishedDate >= window.oneYearAgo && publishedDate <= window.today;
 }
 
+function hostMatchesCompany(url: string, companyDomain: string): boolean {
+  const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  const domain = companyDomain.replace(/^www\./, "").toLowerCase();
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+function dateTimeIsWithinResearchWindow(
+  value: string,
+  window: ResearchWindow,
+): boolean {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const date = formatUtcDate(parsed);
+  return date >= window.oneYearAgo && date <= window.today;
+}
+
+function isUndatedOfficialCurrentPage(
+  source: Source,
+  companyDomain: string,
+): boolean {
+  if (!hostMatchesCompany(source.url, companyDomain)) return false;
+  const path = new URL(source.url).pathname;
+  // Undated event-like pages are not current-state evidence. They still need a real
+  // publication date inside the window, even when the company published them.
+  if (/\/(blog|news|newsroom|press|media|announcements?|events?|updates?)(\/|$)/i.test(path)) {
+    return false;
+  }
+  return source.sourceType === "company" || !isGenericEvidenceSource(source);
+}
+
+export function sourceSupportsCurrentState(
+  source: Source,
+  evidence: Evidence,
+  window: ResearchWindow,
+  policy: CurrentStateSourcePolicy,
+): boolean {
+  if (source.publishedAt) {
+    return sourceIsWithinResearchWindow(source.publishedAt, window);
+  }
+  if (!dateTimeIsWithinResearchWindow(evidence.collectedAt, window)) return false;
+
+  return Boolean(
+    (policy.allowOfficialPage &&
+      isUndatedOfficialCurrentPage(source, policy.companyDomain)) ||
+      (policy.allowJobPosting && isSpecificJobPostingSource(source)),
+  );
+}
+
 export function filterCorpusToResearchWindow<T extends EvidenceCorpus>(
   corpus: T,
   window: ResearchWindow,
@@ -80,6 +138,28 @@ export function filterCorpusToResearchWindow<T extends EvidenceCorpus>(
     ...corpus,
     sources: retainedSources,
     evidence: corpus.evidence.filter((item) => retainedSourceIds.has(item.sourceId)),
+  };
+}
+
+export function filterCorpusToCurrentStateWindow<T extends EvidenceCorpus>(
+  corpus: T,
+  window: ResearchWindow,
+  policy: CurrentStateSourcePolicy,
+): T {
+  const parsedWindow = ResearchWindowSchema.parse(window);
+  const sourceById = new Map(corpus.sources.map((source) => [source.id, source]));
+  const evidence = corpus.evidence.filter((item) => {
+    const source = sourceById.get(item.sourceId);
+    return source
+      ? sourceSupportsCurrentState(source, item, parsedWindow, policy)
+      : false;
+  });
+  const retainedSourceIds = new Set(evidence.map((item) => item.sourceId));
+
+  return {
+    ...corpus,
+    sources: corpus.sources.filter((source) => retainedSourceIds.has(source.id)),
+    evidence,
   };
 }
 

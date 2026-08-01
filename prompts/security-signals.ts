@@ -21,6 +21,7 @@ ${TORQ_RELEVANCE_FRAME}
 - "Why it matters" must be a bounded inference supported by the same evidence; do not assert an undisclosed tool, incident, architecture, budget, pain point, or buying intent.
 - Consolidate multiple sources describing the same underlying fact into one signal using the strongest source.
 - Prioritize signals that illuminate triage, investigation, response, remediation, case management, compliance operations, or coordination across security tools.
+- Incidents and announcements always require an in-window publication date. Undated evidence may support only a present-state security fact from an eligible official page or specific live job posting observed during this run.
 </task>
 
 Silently check specificity, uniqueness, inference boundaries, and evidence IDs before returning only the structured output.

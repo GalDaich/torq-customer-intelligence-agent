@@ -96,7 +96,7 @@ describe("grounding validation", () => {
     expect(validateGroundedReport(validReport())).toEqual(validReport());
   });
 
-  it("enforces the runtime evidence window at the final report boundary", () => {
+  it("enforces claim-specific freshness at the final report boundary", () => {
     const researchWindow = {
       today: "2026-08-01",
       oneYearAgo: "2025-08-01",
@@ -104,16 +104,31 @@ describe("grounding validation", () => {
     const current = validReport();
     current.sources[0].publishedAt = "2026-01-10";
     expect(validateGroundedReport(current, researchWindow)).toEqual(current);
+    expect(validateGroundedReport(validReport(), researchWindow)).toEqual(validReport());
 
     const old = validReport();
-    old.sources[0].publishedAt = "2021-01-10";
+    old.sources[0].publishedAt = "2025-07-31";
     expect(() => validateGroundedReport(old, researchWindow)).toThrow(
-      "Every source must be dated within 2025-08-01 through 2026-08-01.",
+      "Company description must cite an eligible current page",
     );
   });
 
-  it("restores a report by omitting old or undated evidence", () => {
-    const restored = restoreGroundedReport(validReport(), {
+  it("restores an undated official page observed during the run", () => {
+    const report = validReport();
+    const restored = restoreGroundedReport(report, {
+      today: "2026-08-01",
+      oneYearAgo: "2025-08-01",
+    });
+
+    expect(restored.whatTheyDo).toEqual(report.whatTheyDo);
+    expect(restored.sources).toEqual(report.sources);
+    expect(restored.evidence).toEqual(report.evidence);
+  });
+
+  it("restores a report by omitting dated evidence outside the window", () => {
+    const report = validReport();
+    report.sources[0].publishedAt = "2025-07-31";
+    const restored = restoreGroundedReport(report, {
       today: "2026-08-01",
       oneYearAgo: "2025-08-01",
     });
@@ -122,8 +137,39 @@ describe("grounding validation", () => {
     expect(restored.sources).toEqual([]);
     expect(restored.evidence).toEqual([]);
     expect(restored.confidenceAndGaps).toContain(
-      "Sources without a publication date from 2025-08-01 through 2026-08-01 were omitted.",
+      "The company description was omitted because its supporting evidence was unavailable.",
     );
+  });
+
+  it("rejects an undated announcement as a recent event", () => {
+    const report = validReport();
+    report.sources.push({
+      id: "S2",
+      title: "Acme product announcement",
+      url: "https://acme.example/news/product-announcement",
+      publisher: "acme.example",
+      sourceType: "news",
+      publishedAt: null,
+    });
+    report.evidence.push({
+      id: "E2",
+      sourceId: "S2",
+      excerpt: "Acme announced a new product.",
+      collectedAt: "2026-08-01T09:00:00.000Z",
+    });
+    report.recentSignals = [{
+      category: "product",
+      claim: {
+        text: "Acme announced a new product.",
+        evidenceIds: ["E2"],
+        confidence: "high",
+      },
+    }];
+
+    expect(() => validateGroundedReport(report, {
+      today: "2026-08-01",
+      oneYearAgo: "2025-08-01",
+    })).toThrow("Recent signal must cite a source published");
   });
 
   it("accepts an evidence-free partial report with an explicit gap", () => {
@@ -347,7 +393,10 @@ describe("grounding validation", () => {
       },
     }];
 
-    expect(validateGroundedReport(report).technologySignals).toHaveLength(1);
+    expect(validateGroundedReport(report, {
+      today: "2026-08-01",
+      oneYearAgo: "2025-08-01",
+    }).technologySignals).toHaveLength(1);
   });
 
   it("rejects generic or duplicate technology signals", () => {

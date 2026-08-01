@@ -91,6 +91,9 @@ describe("dedicated prompt modules", () => {
     }
     expect(prompts[2]).toContain("generic careers page");
     expect(prompts[2]).toContain("exactly one evidence ID per role");
+    expect(prompts[0]).toContain("observed during this run");
+    expect(prompts[1]).toContain("publication date");
+    expect(prompts[2]).toContain("individual job posting");
     expect(prompts[4]).toContain("Torq is an AI SOC");
     expect(prompts[4]).toContain("one signal per technology");
     expect(prompts[4]).toContain("closed, expired");

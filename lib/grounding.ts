@@ -13,8 +13,8 @@ import {
   technologySignalsDescribeSameTechnology,
 } from "./evidence-quality";
 import {
-  filterCorpusToResearchWindow,
   researchWindowLabel,
+  sourceSupportsCurrentState,
   sourceIsWithinResearchWindow,
   type ResearchWindow,
 } from "./research-window";
@@ -27,6 +27,29 @@ export class GroundingValidationError extends Error {
     super(message);
     this.name = "GroundingValidationError";
   }
+}
+
+type ClaimFreshnessMode = "dated_event" | "company_state" | "job_state" | "current_state";
+
+function evidenceSupportsFreshness(
+  report: CompanyReport,
+  evidence: CompanyReport["evidence"][number],
+  source: CompanyReport["sources"][number],
+  researchWindow: ResearchWindow | undefined,
+  mode: ClaimFreshnessMode,
+): boolean {
+  if (!researchWindow) return true;
+  if (mode === "dated_event") {
+    return sourceIsWithinResearchWindow(source.publishedAt, researchWindow);
+  }
+  if (mode === "company_state" && source.sourceType !== "company") return false;
+  if (mode === "job_state" && source.sourceType !== "hiring") return false;
+
+  return sourceSupportsCurrentState(source, evidence, researchWindow, {
+    companyDomain: report.company.domain,
+    allowOfficialPage: mode !== "job_state",
+    allowJobPosting: mode !== "company_state",
+  });
 }
 
 function allClaims(report: CompanyReport): GroundedClaim[] {
@@ -44,11 +67,16 @@ function allClaims(report: CompanyReport): GroundedClaim[] {
 function groundedClaim(
   claim: GroundedClaim,
   evidenceById: Map<string, CompanyReport["evidence"][number]>,
-  sourceIds: Set<string>,
+  sourceById: Map<string, CompanyReport["sources"][number]>,
+  eligible: (
+    evidence: CompanyReport["evidence"][number],
+    source: CompanyReport["sources"][number],
+  ) => boolean = () => true,
 ): GroundedClaim | null {
   const evidenceIds = [...new Set(claim.evidenceIds)].filter((evidenceId) => {
     const evidence = evidenceById.get(evidenceId);
-    return evidence ? sourceIds.has(evidence.sourceId) : false;
+    const source = evidence ? sourceById.get(evidence.sourceId) : undefined;
+    return evidence && source ? eligible(evidence, source) : false;
   });
   return evidenceIds.length > 0 ? { ...claim, evidenceIds } : null;
 }
@@ -69,46 +97,24 @@ export function restoreGroundedReport(
   input: unknown,
   researchWindow?: ResearchWindow,
 ): CompanyReport {
-  const parsedReport = CompanyReportSchema.parse(input);
-  const windowedCorpus = researchWindow
-    ? filterCorpusToResearchWindow(
-        {
-          sources: parsedReport.sources,
-          evidence: parsedReport.evidence,
-        },
-        researchWindow,
-      )
-    : {
-        sources: parsedReport.sources,
-        evidence: parsedReport.evidence,
-      };
-  const report = CompanyReportSchema.parse({
-    ...parsedReport,
-    sources: windowedCorpus.sources,
-    evidence: windowedCorpus.evidence,
-  });
-  const sourceIds = new Set(report.sources.map((source) => source.id));
+  const report = CompanyReportSchema.parse(input);
   const sourceById = new Map(report.sources.map((source) => [source.id, source]));
   const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
   const omissions: string[] = [];
-  if (
-    researchWindow &&
-    windowedCorpus.sources.length !== parsedReport.sources.length
-  ) {
-    omissions.push(
-      `Sources without a publication date from ${researchWindowLabel(researchWindow)} were omitted.`,
-    );
-  }
+  const eligible = (mode: ClaimFreshnessMode) => (
+    evidence: CompanyReport["evidence"][number],
+    source: CompanyReport["sources"][number],
+  ) => evidenceSupportsFreshness(report, evidence, source, researchWindow, mode);
 
   const whatTheyDo = report.whatTheyDo
-    ? groundedClaim(report.whatTheyDo, evidenceById, sourceIds)
+    ? groundedClaim(report.whatTheyDo, evidenceById, sourceById, eligible("company_state"))
     : null;
   if (!whatTheyDo) {
     omissions.push("The company description was omitted because its supporting evidence was unavailable.");
   }
 
   const recentSignals = report.recentSignals.flatMap((signal) => {
-    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    const claim = groundedClaim(signal.claim, evidenceById, sourceById, eligible("dated_event"));
     return claim ? [{ ...signal, claim }] : [];
   });
   if (recentSignals.length !== report.recentSignals.length) {
@@ -117,7 +123,7 @@ export function restoreGroundedReport(
 
   const hiringSignals: CompanyReport["hiringSignals"] = [];
   for (const signal of report.hiringSignals) {
-    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    const claim = groundedClaim(signal.claim, evidenceById, sourceById, eligible("job_state"));
     const evidence = claim?.evidenceIds.length === 1
       ? evidenceById.get(claim.evidenceIds[0])
       : undefined;
@@ -141,8 +147,9 @@ export function restoreGroundedReport(
   }
 
   const securitySignals = report.securitySignals.flatMap((signal) => {
-    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
-    const whyItMatters = groundedClaim(signal.whyItMatters, evidenceById, sourceIds);
+    const mode = signal.category === "incident" ? "dated_event" : "current_state";
+    const claim = groundedClaim(signal.claim, evidenceById, sourceById, eligible(mode));
+    const whyItMatters = groundedClaim(signal.whyItMatters, evidenceById, sourceById, eligible(mode));
     return claim && whyItMatters ? [{ ...signal, claim, whyItMatters }] : [];
   });
   if (securitySignals.length !== report.securitySignals.length) {
@@ -151,8 +158,8 @@ export function restoreGroundedReport(
 
   const technologySignals: CompanyReport["technologySignals"] = [];
   for (const signal of report.technologySignals) {
-    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
-    const torqRelevance = groundedClaim(signal.torqRelevance, evidenceById, sourceIds);
+    const claim = groundedClaim(signal.claim, evidenceById, sourceById, eligible("current_state"));
+    const torqRelevance = groundedClaim(signal.torqRelevance, evidenceById, sourceById, eligible("current_state"));
     const sharedEvidenceId = claim?.evidenceIds.length === 1 &&
       torqRelevance?.evidenceIds.length === 1 &&
       claim.evidenceIds[0] === torqRelevance.evidenceIds[0]
@@ -180,7 +187,7 @@ export function restoreGroundedReport(
   }
 
   const likelyPainPoints = report.likelyPainPoints.flatMap((item) => {
-    const rationale = groundedClaim(item.rationale, evidenceById, sourceIds);
+    const rationale = groundedClaim(item.rationale, evidenceById, sourceById, eligible("current_state"));
     return rationale ? [{ ...item, rationale }] : [];
   });
   if (likelyPainPoints.length !== report.likelyPainPoints.length) {
@@ -188,7 +195,7 @@ export function restoreGroundedReport(
   }
 
   const talkingPoints = report.talkingPoints.flatMap((item) => {
-    const rationale = groundedClaim(item.rationale, evidenceById, sourceIds);
+    const rationale = groundedClaim(item.rationale, evidenceById, sourceById, eligible("current_state"));
     return rationale ? [{ ...item, rationale }] : [];
   });
   if (talkingPoints.length !== report.talkingPoints.length) {
@@ -251,16 +258,6 @@ export function validateGroundedReport(
   );
   const sourceById = new Map(report.sources.map((source) => [source.id, source]));
   const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
-  if (
-    researchWindow &&
-    report.sources.some(
-      (source) => !sourceIsWithinResearchWindow(source.publishedAt, researchWindow),
-    )
-  ) {
-    throw new GroundingValidationError(
-      `Every source must be dated within ${researchWindowLabel(researchWindow)}.`,
-    );
-  }
   const canonicalUrls = report.sources.map((source) => canonicalEvidenceUrl(source.url));
   if (new Set(canonicalUrls).size !== canonicalUrls.length) {
     throw new GroundingValidationError("Sources must not repeat the same canonical URL.");
@@ -288,6 +285,55 @@ export function validateGroundedReport(
       }
       citedEvidenceIds.add(evidenceId);
     }
+  }
+
+  const assertFreshness = (
+    claim: GroundedClaim,
+    mode: ClaimFreshnessMode,
+    label: string,
+  ) => {
+    if (!researchWindow) return;
+    for (const evidenceId of claim.evidenceIds) {
+      const evidence = evidenceById.get(evidenceId);
+      const source = evidence ? sourceById.get(evidence.sourceId) : undefined;
+      if (
+        evidence &&
+        source &&
+        !evidenceSupportsFreshness(report, evidence, source, researchWindow, mode)
+      ) {
+        const requirement = mode === "dated_event"
+          ? "a source published"
+          : "an eligible current page published or observed";
+        throw new GroundingValidationError(
+          `${label} must cite ${requirement} within ${researchWindowLabel(researchWindow)}.`,
+        );
+      }
+    }
+  };
+
+  if (report.whatTheyDo) {
+    assertFreshness(report.whatTheyDo, "company_state", "Company description");
+  }
+  for (const signal of report.recentSignals) {
+    assertFreshness(signal.claim, "dated_event", "Recent signal");
+  }
+  for (const signal of report.hiringSignals) {
+    assertFreshness(signal.claim, "job_state", `Hiring signal ${signal.roleTitle}`);
+  }
+  for (const signal of report.securitySignals) {
+    const mode = signal.category === "incident" ? "dated_event" : "current_state";
+    assertFreshness(signal.claim, mode, "Security signal");
+    assertFreshness(signal.whyItMatters, mode, "Security relevance");
+  }
+  for (const signal of report.technologySignals) {
+    assertFreshness(signal.claim, "current_state", `Technology signal ${signal.technology}`);
+    assertFreshness(signal.torqRelevance, "current_state", `Technology relevance ${signal.technology}`);
+  }
+  for (const item of report.likelyPainPoints) {
+    assertFreshness(item.rationale, "current_state", "Pain-point rationale");
+  }
+  for (const item of report.talkingPoints) {
+    assertFreshness(item.rationale, "current_state", "Talking-point rationale");
   }
 
   if (citedEvidenceIds.size !== report.evidence.length) {

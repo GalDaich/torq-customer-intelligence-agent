@@ -115,10 +115,10 @@ describe("provider normalization", () => {
             published_date: "2026-01-15",
           },
           {
-            title: "Old announcement",
+            title: "Outside-window announcement",
             url: "https://news.example/old",
             content: "Old evidence.",
-            published_date: "2021-01-15",
+            published_date: "2025-07-31",
           },
           {
             title: "Undated announcement",
@@ -146,6 +146,39 @@ describe("provider normalization", () => {
       "Current announcement",
     ]);
     expect(corpus.evidence).toHaveLength(1);
+  });
+
+  it("keeps an undated official current-state result without sending date filters", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        results: [{
+          title: "Acme security architecture",
+          url: "https://acme.example/security/architecture",
+          content: "Acme uses Splunk for security monitoring and response workflows.",
+        }],
+      });
+    });
+
+    const corpus = await searchTavily(
+      {
+        query: "Acme security architecture",
+        idPrefix: "TEC1",
+        sourceType: "technology",
+        researchWindow: {
+          today: "2026-08-01",
+          oneYearAgo: "2025-08-01",
+        },
+        freshnessPolicy: "current_state",
+        companyDomain: "acme.example",
+      },
+      { apiKey: "test-key", fetchImpl },
+    );
+
+    expect(requestBody).not.toHaveProperty("start_date");
+    expect(requestBody).not.toHaveProperty("end_date");
+    expect(corpus.sources).toHaveLength(1);
   });
 
   it("uses Firecrawl map to discover a bounded official-site target set", async () => {
@@ -239,6 +272,37 @@ describe("provider normalization", () => {
     );
 
     expect(corpus).toEqual({ sources: [], evidence: [] });
+  });
+
+  it("uses an undated official page as present-state evidence when explicitly allowed", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        success: true,
+        data: {
+          markdown:
+            "Acme provides a platform that coordinates security operations across cloud environments and enterprise systems.",
+          metadata: { title: "Acme platform", sourceURL: "https://acme.example/platform" },
+        },
+      }),
+    );
+
+    const corpus = await scrapeFirecrawl(
+      {
+        url: "https://acme.example/platform",
+        idPrefix: "FP1",
+        sourceType: "company",
+        researchWindow: {
+          today: "2026-08-01",
+          oneYearAgo: "2025-08-01",
+        },
+        freshnessPolicy: "current_state",
+        companyDomain: "acme.example",
+      },
+      { apiKey: "test-key", fetchImpl },
+    );
+
+    expect(corpus.sources).toHaveLength(1);
+    expect(corpus.evidence).toHaveLength(1);
   });
 
   it("rejects generic hiring pages before they become evidence", async () => {

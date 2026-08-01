@@ -16,7 +16,7 @@ export const GROUNDED_RESEARCH_RULES = `
 8. Omit weak, ambiguous, stale, or duplicate findings. Record material limitations in gaps.
 9. Pain points and talking points are labeled inferences and still require direct supporting evidence.
 10. Keep missing dates, locations, teams, and other details unknown rather than estimating them.
-11. Use only evidence whose linked source has a valid publishedAt date inside the supplied researchWindow, including both boundary dates. Undated, older, and future sources are unavailable evidence.
+11. Dated articles and events must have publishedAt inside the supplied researchWindow, including both boundary dates. An undated source may support only a present-state claim when it is an eligible official company page or specific live job posting observed during this run. collectedAt is an observation time, never a claimed publication date.
 </non_negotiable_rules>
 `.trim();
 

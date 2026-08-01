@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createResearchWindow,
+  filterCorpusToCurrentStateWindow,
   filterCorpusToResearchWindow,
   sourceIsWithinResearchWindow,
 } from "./research-window";
@@ -42,11 +43,11 @@ describe("research evidence window", () => {
           },
           {
             id: "S2",
-            title: "Old announcement",
+            title: "Outside-window announcement",
             url: "https://acme.example/news/old",
             publisher: "acme.example",
             sourceType: "news" as const,
-            publishedAt: "2021-03-10",
+            publishedAt: "2025-07-31",
           },
         ],
         evidence: [
@@ -69,5 +70,75 @@ describe("research evidence window", () => {
 
     expect(corpus.sources.map((source) => source.id)).toEqual(["S1"]);
     expect(corpus.evidence.map((item) => item.id)).toEqual(["E1"]);
+  });
+
+  it("accepts an undated official page observed during the run but not an undated article", () => {
+    const corpus = filterCorpusToCurrentStateWindow(
+      {
+        sources: [
+          {
+            id: "S1",
+            title: "Acme platform",
+            url: "https://acme.example/platform",
+            publisher: "acme.example",
+            sourceType: "company" as const,
+            publishedAt: null,
+          },
+          {
+            id: "S2",
+            title: "Acme product announcement",
+            url: "https://acme.example/news/product-announcement",
+            publisher: "acme.example",
+            sourceType: "news" as const,
+            publishedAt: null,
+          },
+        ],
+        evidence: [
+          {
+            id: "E1",
+            sourceId: "S1",
+            excerpt: "Acme provides a security automation platform.",
+            collectedAt: "2026-08-01T09:00:00.000Z",
+          },
+          {
+            id: "E2",
+            sourceId: "S2",
+            excerpt: "Acme announced a product without a usable publication date.",
+            collectedAt: "2026-08-01T09:00:00.000Z",
+          },
+        ],
+      },
+      window,
+      { companyDomain: "acme.example", allowOfficialPage: true },
+    );
+
+    expect(corpus.sources.map((source) => source.id)).toEqual(["S1"]);
+    expect(corpus.evidence.map((item) => item.id)).toEqual(["E1"]);
+  });
+
+  it("accepts an undated specific job posting observed during the run", () => {
+    const corpus = filterCorpusToCurrentStateWindow(
+      {
+        sources: [{
+          id: "S1",
+          title: "Security Engineer - Acme",
+          url: "https://jobs.ashbyhq.com/acme/security-engineer",
+          publisher: "ashbyhq.com",
+          sourceType: "hiring" as const,
+          publishedAt: null,
+        }],
+        evidence: [{
+          id: "E1",
+          sourceId: "S1",
+          excerpt: "Acme is hiring a Security Engineer.",
+          collectedAt: "2026-08-01T09:00:00.000Z",
+        }],
+      },
+      window,
+      { companyDomain: "acme.example", allowJobPosting: true },
+    );
+
+    expect(corpus.sources).toHaveLength(1);
+    expect(corpus.evidence).toHaveLength(1);
   });
 });

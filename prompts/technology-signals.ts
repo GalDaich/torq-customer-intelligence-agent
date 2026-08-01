@@ -31,6 +31,7 @@ A valid signal must name one specific technology, platform, or service and be su
 - Exclude programming languages and generic developer tools unless the evidence directly connects them to security operations, cloud operations, incident response, or cross-tool automation.
 - Exclude closed, expired, or explicitly unavailable job postings.
 - Exclude technologies used only for HR, customer experience, sales, finance, or general business operations when the evidence does not connect them to security, cloud, infrastructure, incident response, or technical automation.
+- An undated eligible official technical page or specific live job posting observed during this run may support a present-state technology claim. Undated articles, case-study indexes, and stack directories may not.
 </task>
 
 Silently check every technology for explicit naming, source specificity, uniqueness, bounded relevance, and exactly one strongest evidence ID. Return only the structured output.

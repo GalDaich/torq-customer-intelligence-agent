@@ -4,7 +4,7 @@
 
 One Next.js application keeps the UI and provider calls together. The browser handles company input, confirmation, progress, and reports. API keys and external requests stay server-side.
 
-Each confirmed company gets its own LangGraph run. Five research steps run in parallel: company context, recent events, hiring, security signals, and named technologies. The run calculates today in UTC and one calendar year earlier, then gives that exact window to every search and prompt. Undated or out-of-window sources are removed in code. The recent-signals step also checks the company's own blog, newsroom, and press releases for dated items.
+Each confirmed company gets its own LangGraph run. Five research steps run in parallel. The run calculates today in UTC and one calendar year earlier. Dated events outside that window are removed in code. Current official pages and specific live job postings may support present-state facts when observed during the run. The recent-signals step also checks the company's own blog, newsroom, and press releases for dated items.
 
 Tavily searches, Firecrawl extracts pages, and OpenAI classifies evidence and writes the report. Model calls have bounded, no-retry timeouts; failed final synthesis returns grounded specialist findings instead of losing the run. LangSmith callbacks finish synchronously on the serverless path. Final validation checks every claim-to-evidence-to-source path and removes unsupported or repeated findings.
 

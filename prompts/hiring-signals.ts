@@ -26,6 +26,7 @@ A valid hiring signal must name one exact role and be supported by one item-spec
 - Cite exactly one evidence ID per role. Prefer the direct employer posting, then its ATS posting, then LinkedIn, then another aggregator.
 - Do not use the number of duplicate listings as evidence of hiring volume or urgency.
 - Do not infer a skills gap, staff shortage, project, or buying initiative from an opening.
+- An undated individual job posting may support a current opening when it was observed during this run and does not say that the role is closed, expired, or unavailable.
 </task>
 
 Silently check every role for specificity, current-state support, uniqueness, and exactly one strongest evidence ID. Return only the structured output.

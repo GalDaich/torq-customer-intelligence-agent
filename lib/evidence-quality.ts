@@ -64,6 +64,27 @@ export function isGenericHiringSource(source: Pick<Source, "title" | "url">): bo
   return false;
 }
 
+export function isSpecificJobPostingSource(
+  source: Pick<Source, "title" | "url">,
+): boolean {
+  if (isGenericHiringSource(source)) return false;
+
+  const url = new URL(source.url);
+  const host = url.hostname.replace(/^www\./, "");
+  const path = url.pathname.replace(/\/+$/, "");
+  const atsHost = /(^|\.)(ashbyhq\.com|greenhouse\.io|lever\.co|myworkdayjobs\.com|smartrecruiters\.com|workable\.com)$/i;
+  const itemPath = /\/(jobs?|careers?|positions?|openings?|roles?)\/(?!search(?:\/|$))[^/]+/i;
+  const linkedinJob = /\/jobs\/view\/[^/]+/i;
+  const roleTitle = /\b(security|soc|incident|cloud|identity|devsecops|devops|infrastructure|platform|site reliability|sre)\b.*\b(engineer|analyst|architect|manager|lead|specialist|director|role)\b/i;
+
+  return (
+    atsHost.test(host) ||
+    itemPath.test(path) ||
+    linkedinJob.test(path) ||
+    roleTitle.test(source.title)
+  );
+}
+
 export function isGenericEvidenceSource(
   source: Pick<Source, "sourceType" | "title" | "url">,
 ): boolean {

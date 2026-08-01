@@ -37,6 +37,16 @@ function candidateName(title: string, fallback: string): string {
   return firstSegment || fallback;
 }
 
+function candidatePageScore(source: ResearchCorpus["sources"][number]): number {
+  const path = new URL(source.url).pathname.replace(/\/+$/, "") || "/";
+  let score = path === "/" ? 1_000 : 0;
+  if (/\/(about|company|products?|platform|solutions?)(\/|$)/i.test(path)) score += 300;
+  if (/\/(support|help|docs?|careers?|jobs?|blog|news|press|legal)(\/|$)/i.test(path)) {
+    score -= 500;
+  }
+  return score;
+}
+
 function comparisonKey(value: string): string {
   return value.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -102,7 +112,10 @@ export function candidatesFromCorpus(
   // Results are grouped by host so several matching pages become one candidate rather
   // than misleading the user with duplicates from the same website.
   const evidenceBySource = new Map(corpus.evidence.map((item) => [item.sourceId, item.excerpt]));
-  const grouped = new Map<string, CompanyCandidate>();
+  const grouped = new Map<
+    string,
+    { candidate: CompanyCandidate; representativeScore: number }
+  >();
   const inputDomain = domainFromInput(inputName);
 
   for (const source of corpus.sources) {
@@ -110,24 +123,35 @@ export function candidatesFromCorpus(
     if (!isCandidateHost(host)) continue;
     const groupedHost = inputDomain && domainMatches(host, inputDomain) ? inputDomain : host;
     const existing = grouped.get(groupedHost);
+    const pageScore = candidatePageScore(source);
     if (existing) {
-      existing.sourceIds.push(source.id);
+      existing.candidate.sourceIds.push(source.id);
+      if (pageScore > existing.representativeScore) {
+        existing.candidate.name = candidateName(source.title, inputName);
+        existing.candidate.description =
+          evidenceBySource.get(source.id)?.slice(0, 260) ?? "No description was returned.";
+        existing.representativeScore = pageScore;
+      }
       continue;
     }
 
     grouped.set(groupedHost, {
-      id: `${researchId}:C${grouped.size + 1}`,
-      name: candidateName(source.title, inputName),
-      domain: groupedHost,
-      websiteUrl: inputDomain && groupedHost === inputDomain
-        ? `https://${inputDomain}`
-        : new URL(source.url).origin,
-      description: evidenceBySource.get(source.id)?.slice(0, 260) ?? "No description was returned.",
-      sourceIds: [source.id],
+      candidate: {
+        id: `${researchId}:C${grouped.size + 1}`,
+        name: candidateName(source.title, inputName),
+        domain: groupedHost,
+        websiteUrl: inputDomain && groupedHost === inputDomain
+          ? `https://${inputDomain}`
+          : new URL(source.url).origin,
+        description: evidenceBySource.get(source.id)?.slice(0, 260) ?? "No description was returned.",
+        sourceIds: [source.id],
+      },
+      representativeScore: pageScore,
     });
   }
 
   return [...grouped.values()]
+    .map((entry) => entry.candidate)
     .sort((left, right) => officialWebsiteScore(right, inputName) - officialWebsiteScore(left, inputName))
     .slice(0, 4);
 }

@@ -9,7 +9,7 @@ Live demo: [torq-demo.galdaich.com](https://torq-demo.galdaich.com)
 - Accepts company names and finds likely official websites.
 - Waits for the user to confirm each company before spending research credits.
 - Researches company context, recent events, hiring, security signals, and named technologies.
-- Limits every evidence source to the exact one-year window calculated when the run starts.
+- Keeps dated events inside the exact one-year window calculated when the run starts, while allowing current official pages and live job postings observed during the run to support present-state facts.
 - Checks the company's own dated blog, newsroom, and press-release items for recent signals.
 - Produces a separate cited report for each company.
 - Shows missing or weak evidence as a gap instead of filling it with a generic answer.
@@ -52,7 +52,7 @@ npm start          # serve the production build
 
 I kept this submission to Level 1. There is no account system, database, watchlist, scheduled refresh, or change feed. Company selections live in the browser and disappear on refresh.
 
-The research flow uses bounded Tavily searches and targeted Firecrawl extraction. Undated, older, and future sources are removed before they reach the model. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to in-window evidence and real source URLs. Model attempts do not retry, final synthesis falls back to grounded specialist findings after its deadline, and the whole company run stops safely before Vercel's function limit.
+The research flow uses bounded Tavily searches and targeted Firecrawl extraction. Dated events must fall inside the runtime window. Undated evidence can support only a present-state fact from an eligible official page or specific live job posting observed during the run; undated articles and dated sources outside the window are rejected. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to eligible evidence and real source URLs. Model attempts do not retry, final synthesis falls back to grounded specialist findings after its deadline, and the whole company run stops safely before Vercel's function limit.
 
 The two additional submission files are:
 

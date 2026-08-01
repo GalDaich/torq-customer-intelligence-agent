@@ -48,11 +48,12 @@ describe("node-specific Tavily plans", () => {
     expect(researchCredits).toBe(15);
   });
 
-  it("uses exact recency for every search and suppresses noisy job aggregators", () => {
+  it("uses dated-event or current-state freshness by search purpose", () => {
     expect(recentSignalSearchPlan(company, researchWindow)[0]).toMatchObject({
       searchDepth: "basic",
       researchWindow,
       minimumScore: 0.25,
+      freshnessPolicy: "dated_event",
     });
     expect(recentSignalSearchPlan(company, researchWindow)[0].query).toContain(
       "site:acme.example",
@@ -68,16 +69,27 @@ describe("node-specific Tavily plans", () => {
       topic: "news",
       minimumScore: 0.35,
       researchWindow,
+      freshnessPolicy: "dated_event",
     });
     expect(securitySignalSearchPlan(company, researchWindow)[1]).toMatchObject({
       searchDepth: "basic",
       topic: "news",
       researchWindow,
+      freshnessPolicy: "dated_event",
     });
     for (const plan of hiringSignalSearchPlan(company, researchWindow)) {
       expect(plan.excludeDomains).toContain("linkedin.com");
       expect(plan.excludeDomains).toContain("indeed.com");
+      expect(plan).toMatchObject({
+        freshnessPolicy: "current_state",
+        companyDomain: "acme.example",
+        allowUndatedJobPosting: true,
+      });
     }
+    expect(securitySignalSearchPlan(company, researchWindow)[0].freshnessPolicy)
+      .toBe("current_state");
+    expect(technologySignalSearchPlan(company, researchWindow).map((plan) => plan.freshnessPolicy))
+      .toEqual(["dated_event", "current_state", "current_state"]);
   });
 
   it("covers Torq-relevant integration surfaces in the technology plan", () => {

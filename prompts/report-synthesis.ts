@@ -30,6 +30,7 @@ ${TORQ_RELEVANCE_FRAME}
 - Return 1–3 likely pain points as explicitly evidence-backed hypotheses relevant to security automation when the evidence supports them. Otherwise return an empty list and explain the limitation in confidence and gaps. Do not present a hypothesis as a known internal problem.
 - Return 2–3 specific, natural first-call talking points tied to target-company evidence when supported. Otherwise return fewer or none and explain the limitation in confidence and gaps; never fill the quota with generic Torq pitches or asserted customer needs.
 - Set whatTheyDo to null only when no supplied evidence responsibly supports a plain-language company description, and record that limitation as a gap.
+- Keep temporal meaning intact: dated events require an in-window publication date, while eligible undated official pages and live job postings may support only present-state claims observed during this run.
 - Use technology signals to identify credible integration or orchestration surfaces, but never treat the presence of one tool as proof of fragmentation, manual work, or replacement intent.
 - Consolidate the supplied retrieval and extraction limitations into 1–6 candid, concrete, non-repetitive confidence-and-gap bullets. Keep only what a human should verify before acting.
 </task>

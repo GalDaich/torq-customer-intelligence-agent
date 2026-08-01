@@ -75,6 +75,7 @@ export function recentSignalSearchPlan(
       query: `site:${company.domain} "${company.name}" launches announces acquisition funding partnership leadership product update press release`,
       topic: "news",
       researchWindow,
+      freshnessPolicy: "dated_event",
       minimumScore: 0.25,
     },
     {
@@ -82,6 +83,7 @@ export function recentSignalSearchPlan(
       query: `site:${company.domain} "${company.name}" blog report guide research customer story security compliance company update`,
       topic: "news",
       researchWindow,
+      freshnessPolicy: "dated_event",
       minimumScore: 0.25,
     },
     {
@@ -89,6 +91,7 @@ export function recentSignalSearchPlan(
       query: `${target} recent funding product launch acquisition leadership announcement`,
       topic: "news",
       researchWindow,
+      freshnessPolicy: "dated_event",
       minimumScore: 0.35,
     },
   ];
@@ -106,6 +109,9 @@ export function hiringSignalSearchPlan(
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,
       researchWindow,
+      freshnessPolicy: "current_state",
+      companyDomain: company.domain,
+      allowUndatedJobPosting: true,
     },
     {
       ...advancedSearch,
@@ -113,6 +119,9 @@ export function hiringSignalSearchPlan(
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,
       researchWindow,
+      freshnessPolicy: "current_state",
+      companyDomain: company.domain,
+      allowUndatedJobPosting: true,
     },
   ];
 }
@@ -128,12 +137,16 @@ export function securitySignalSearchPlan(
       query: `${target} security operations SOC incident response compliance security team automation`,
       topic: "general",
       researchWindow,
+      freshnessPolicy: "current_state",
+      companyDomain: company.domain,
+      allowUndatedJobPosting: true,
     },
     {
       ...basicSearch,
       query: `${target} breach vulnerability cloud security identity phishing threat response`,
       topic: "news",
       researchWindow,
+      freshnessPolicy: "dated_event",
     },
   ];
 }
@@ -149,12 +162,15 @@ export function technologySignalSearchPlan(
       query: `${target} publicly used SIEM EDR XDR IAM cloud security tools technology stack`,
       topic: "general",
       researchWindow,
+      freshnessPolicy: "dated_event",
     },
     {
       ...basicSearch,
       query: `site:${company.domain} engineering architecture AWS Azure GCP Kubernetes security stack`,
       topic: "general",
       researchWindow,
+      freshnessPolicy: "current_state",
+      companyDomain: company.domain,
     },
     {
       ...basicSearch,
@@ -162,6 +178,9 @@ export function technologySignalSearchPlan(
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,
       researchWindow,
+      freshnessPolicy: "current_state",
+      companyDomain: company.domain,
+      allowUndatedJobPosting: true,
     },
   ];
 }
