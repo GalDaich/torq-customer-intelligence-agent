@@ -101,6 +101,19 @@ export class ProtectedBoundaryError extends Error {
   }
 }
 
+export function httpErrorStatus(error: unknown): number | undefined {
+  if (error instanceof ProviderError) return error.status;
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  if (typeof candidate.status === "number") return candidate.status;
+  return typeof candidate.statusCode === "number" ? candidate.statusCode : undefined;
+}
+
+export function isProviderClientError(error: unknown): boolean {
+  const status = httpErrorStatus(error);
+  return status !== undefined && status >= 400 && status < 500;
+}
+
 export function requireServerEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -403,6 +416,10 @@ export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
 
 export function publicErrorMessage(error: unknown): string {
   if (error instanceof ProviderError) return error.message;
+  const status = httpErrorStatus(error);
+  if (status !== undefined && status >= 400 && status < 500) {
+    return `A provider request failed with status ${status}.`;
+  }
   if (error instanceof ProtectedBoundaryError) return error.message;
   if (error instanceof Error && error.message.startsWith("Missing required server environment variable:")) {
     return error.message;

@@ -15,11 +15,11 @@ Source of truth: [Torq AI Solutions Engineer take-home assignment](https://drive
 | Security-automation relevance | Security and technology nodes use a bounded Torq relevance frame; synthesis produces Torq-relevant hypotheses | Prompts prohibit claiming pain, fragmentation, manual work, connector availability, budget, urgency, or intent without target-company evidence |
 | LLM analysis and synthesis across sources | Five specialist classifications feed a separate structured synthesis call | Node-selected lineage only; no raw omitted result can be reintroduced |
 | What the company does in plain language | First-party extraction creates the required grounded `whatTheyDo` claim | Claim must resolve through evidence ID to a real source URL |
-| Educated security-automation pain points | Report requires 1–3 explicitly evidence-backed hypotheses | Schema rejects a report with no pain point; prompt requires uncertainty and prohibits presenting hypotheses as known problems |
-| 2–3 specific first-call talking points | Report requires exactly 2–3 evidence-backed conversation openers | Schema rejects fewer than two or more than three |
-| Confidence and gaps as a first-class feature | Every node records gaps; synthesis consolidates them into a short report note; final report has its own collapsed Confidence & gaps category | Schema requires 1–6 bullets plus honest no-fallback failure handling |
+| Educated security-automation pain points | Normal synthesis targets 1–3 explicitly evidence-backed hypotheses | Prompt requires uncertainty; unsupported hypotheses are omitted and become a visible gap rather than blocking the report |
+| 2–3 specific first-call talking points | Normal synthesis targets 2–3 evidence-backed conversation openers | Upper bound is enforced; weak evidence may return fewer with an explicit gap instead of generic quota-filling |
+| Confidence and gaps as a first-class feature | Every node records gaps; synthesis consolidates them into a short report note; final report has its own collapsed Confidence & gaps category | Schema requires 1–6 bullets; restorative grounding records omitted findings and partial-report limitations |
 | Designed, self-service browser product | Company confirmation, honest progress, launchpad report cards, company-named tabs, single-open accordion report | Static rendering and interaction-contract tests cover critical UI states |
-| Loading, empty, weak-data, and failure states | Resolver, streamed graph progress, empty categories, partial batch failures, and visible gaps | Typed progress and failure events; provider and validation failures are sanitized |
+| Loading, empty, weak-data, and failure states | Resolver, streamed graph progress, empty categories, partial batch failures, and visible gaps | Provider HTTP 4xx responses block; other provider, LLM, evidence, synthesis, and grounding issues become report gaps |
 | Public/free-tier tools only | Next.js, OpenAI key, Tavily, Firecrawl, LangGraph, and LangSmith; no paid enrichment provider | Provider requests are bounded and server-only |
 
 ## Retrieval responsibilities

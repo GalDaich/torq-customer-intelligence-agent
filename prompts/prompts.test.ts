@@ -89,7 +89,8 @@ describe("dedicated prompt modules", () => {
     expect(prompts[4]).toContain("one signal per technology");
     expect(prompts[4]).toContain("closed, expired");
     expect(prompts[4]).toContain("customer experience");
-    expect(prompts[5]).toContain("exactly 2–3 specific");
+    expect(prompts[5]).toContain("Return 2–3 specific");
+    expect(prompts[5]).toContain("return fewer or none");
     expect(prompts[5]).toContain("integration or orchestration surfaces");
     expect(prompts[5]).toContain("1–6 candid");
   });

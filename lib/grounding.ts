@@ -22,7 +22,7 @@ export class GroundingValidationError extends Error {
 
 function allClaims(report: CompanyReport): GroundedClaim[] {
   return [
-    report.whatTheyDo,
+    ...(report.whatTheyDo ? [report.whatTheyDo] : []),
     ...report.recentSignals.map((signal) => signal.claim),
     ...report.hiringSignals.map((signal) => signal.claim),
     ...report.securitySignals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
@@ -30,6 +30,152 @@ function allClaims(report: CompanyReport): GroundedClaim[] {
     ...report.likelyPainPoints.map((painPoint) => painPoint.rationale),
     ...report.talkingPoints.map((talkingPoint) => talkingPoint.rationale),
   ];
+}
+
+function groundedClaim(
+  claim: GroundedClaim,
+  evidenceById: Map<string, CompanyReport["evidence"][number]>,
+  sourceIds: Set<string>,
+): GroundedClaim | null {
+  const evidenceIds = [...new Set(claim.evidenceIds)].filter((evidenceId) => {
+    const evidence = evidenceById.get(evidenceId);
+    return evidence ? sourceIds.has(evidence.sourceId) : false;
+  });
+  return evidenceIds.length > 0 ? { ...claim, evidenceIds } : null;
+}
+
+function reportGaps(existing: string[], additions: string[]): string[] {
+  const added = [...new Set(additions.map((gap) => gap.trim()).filter(Boolean))];
+  const retained = [...new Set(existing.map((gap) => gap.trim()).filter(Boolean))]
+    .filter((gap) => !added.includes(gap))
+    .slice(0, Math.max(0, 6 - added.length));
+  return [...retained, ...added].slice(0, 6);
+}
+
+/**
+ * Restores a schema-valid synthesized report by omitting structurally unsafe optional findings.
+ * It never rewrites claim text or invents evidence; every omission becomes a visible report gap.
+ */
+export function restoreGroundedReport(input: unknown): CompanyReport {
+  const report = CompanyReportSchema.parse(input);
+  const sourceIds = new Set(report.sources.map((source) => source.id));
+  const sourceById = new Map(report.sources.map((source) => [source.id, source]));
+  const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
+  const omissions: string[] = [];
+
+  const whatTheyDo = report.whatTheyDo
+    ? groundedClaim(report.whatTheyDo, evidenceById, sourceIds)
+    : null;
+  if (!whatTheyDo) {
+    omissions.push("The company description was omitted because its supporting evidence was unavailable.");
+  }
+
+  const recentSignals = report.recentSignals.flatMap((signal) => {
+    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    return claim ? [{ ...signal, claim }] : [];
+  });
+  if (recentSignals.length !== report.recentSignals.length) {
+    omissions.push("Some recent signals were omitted because their supporting evidence was unavailable.");
+  }
+
+  const hiringSignals: CompanyReport["hiringSignals"] = [];
+  for (const signal of report.hiringSignals) {
+    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    const evidence = claim?.evidenceIds.length === 1
+      ? evidenceById.get(claim.evidenceIds[0])
+      : undefined;
+    const source = evidence ? sourceById.get(evidence.sourceId) : undefined;
+    const duplicate = hiringSignals.some((retained) =>
+      hiringSignalsDescribeSamePosition(signal, retained));
+    if (
+      !claim ||
+      claim.evidenceIds.length !== 1 ||
+      !source ||
+      source.sourceType !== "hiring" ||
+      isGenericHiringSource(source) ||
+      duplicate
+    ) {
+      continue;
+    }
+    hiringSignals.push({ ...signal, claim });
+  }
+  if (hiringSignals.length !== report.hiringSignals.length) {
+    omissions.push("Some hiring signals were omitted because they were duplicate, generic, or lacked one specific supporting source.");
+  }
+
+  const securitySignals = report.securitySignals.flatMap((signal) => {
+    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    const whyItMatters = groundedClaim(signal.whyItMatters, evidenceById, sourceIds);
+    return claim && whyItMatters ? [{ ...signal, claim, whyItMatters }] : [];
+  });
+  if (securitySignals.length !== report.securitySignals.length) {
+    omissions.push("Some security signals were omitted because their supporting evidence was unavailable.");
+  }
+
+  const technologySignals: CompanyReport["technologySignals"] = [];
+  for (const signal of report.technologySignals) {
+    const claim = groundedClaim(signal.claim, evidenceById, sourceIds);
+    const torqRelevance = groundedClaim(signal.torqRelevance, evidenceById, sourceIds);
+    const sharedEvidenceId = claim?.evidenceIds.length === 1 &&
+      torqRelevance?.evidenceIds.length === 1 &&
+      claim.evidenceIds[0] === torqRelevance.evidenceIds[0]
+      ? claim.evidenceIds[0]
+      : null;
+    const evidence = sharedEvidenceId ? evidenceById.get(sharedEvidenceId) : undefined;
+    const source = evidence ? sourceById.get(evidence.sourceId) : undefined;
+    const duplicate = technologySignals.some((retained) =>
+      technologySignalsDescribeSameTechnology(signal, retained));
+    if (
+      !claim ||
+      !torqRelevance ||
+      !sharedEvidenceId ||
+      !source ||
+      isGenericEvidenceSource(source) ||
+      !isAtomicTechnologyName(signal.technology) ||
+      duplicate
+    ) {
+      continue;
+    }
+    technologySignals.push({ ...signal, claim, torqRelevance });
+  }
+  if (technologySignals.length !== report.technologySignals.length) {
+    omissions.push("Some technology signals were omitted because they grouped multiple tools, were duplicate, generic, or lacked one specific supporting source.");
+  }
+
+  const likelyPainPoints = report.likelyPainPoints.flatMap((item) => {
+    const rationale = groundedClaim(item.rationale, evidenceById, sourceIds);
+    return rationale ? [{ ...item, rationale }] : [];
+  });
+  if (likelyPainPoints.length !== report.likelyPainPoints.length) {
+    omissions.push("Some pain-point hypotheses were omitted because their supporting evidence was unavailable.");
+  }
+
+  const talkingPoints = report.talkingPoints.flatMap((item) => {
+    const rationale = groundedClaim(item.rationale, evidenceById, sourceIds);
+    return rationale ? [{ ...item, rationale }] : [];
+  });
+  if (talkingPoints.length !== report.talkingPoints.length) {
+    omissions.push("Some talking points were omitted because their supporting evidence was unavailable.");
+  }
+  if (likelyPainPoints.length === 0) {
+    omissions.push("The available evidence did not support a responsible security-automation pain-point hypothesis.");
+  }
+  if (talkingPoints.length < 2) {
+    omissions.push("The available evidence did not support two responsible company-specific talking points.");
+  }
+
+  const restored = CompanyReportSchema.parse({
+    ...report,
+    whatTheyDo,
+    recentSignals,
+    hiringSignals,
+    securitySignals,
+    technologySignals,
+    likelyPainPoints,
+    talkingPoints,
+    confidenceAndGaps: reportGaps(report.confidenceAndGaps, omissions),
+  });
+  return validateGroundedReport(retainCitedLineage(restored));
 }
 
 function uniqueIds(ids: string[], label: string): Set<string> {

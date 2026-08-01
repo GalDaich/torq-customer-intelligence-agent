@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isProviderClientError,
   mapFirecrawl,
   mergeCorpora,
   ProviderError,
@@ -278,5 +279,12 @@ describe("provider normalization", () => {
     ).rejects.toEqual(
       new ProviderError("Tavily", "Tavily request failed with status 401.", 401),
     );
+  });
+
+  it("treats every provider 4xx response as a blocking client error", () => {
+    expect(isProviderClientError(new ProviderError("Firecrawl", "blocked", 400))).toBe(true);
+    expect(isProviderClientError(new ProviderError("Tavily", "rate limited", 429))).toBe(true);
+    expect(isProviderClientError(new ProviderError("Tavily", "unavailable", 503))).toBe(false);
+    expect(isProviderClientError(new Error("classification failed"))).toBe(false);
   });
 });

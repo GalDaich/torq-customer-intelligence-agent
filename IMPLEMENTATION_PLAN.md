@@ -99,7 +99,7 @@ Company tags
     -> POST /api/research
     -> Stream actual LangGraph task events
     -> One LangGraph execution per company
-    -> Grounding validation
+    -> Restorative grounding validation
     -> One report per company
 ```
 
@@ -570,7 +570,8 @@ The research nodes should be parallelizable because they are independent evidenc
 - Confirm every evidence ID exists.
 - Confirm every evidence record references a source.
 - Confirm every source URL is valid.
-- Reject unsupported claims.
+- Omit unsafe optional findings and their unused lineage.
+- Record every omission in Confidence & gaps instead of discarding the report.
 
 ## Grounding rules
 
@@ -694,10 +695,9 @@ Claims should show small inline source badges such as `[S1]` and `[S2]`. The sou
 - Successful report.
 - Partial batch success.
 - No meaningful public footprint.
-- Search failure.
-- Scrape failure.
-- LLM failure.
-- Grounding validation failure.
+- Blocking provider HTTP 4xx failure.
+- Search, scrape, or model limitation recorded as a report gap.
+- Restored partial report after synthesis or grounding issues.
 
 Progress indicators must be honest. Do not display fake node progress unless the API actually streams node updates.
 
@@ -804,7 +804,7 @@ Add tests only around behavior that protects the contracts:
 - Event-driven progress rendering without activity-log output.
 - Node-specific Tavily query/depth/recency/domain/score plans and Firecrawl map/scrape options.
 - Named-technology specificity, one-source selection, deduplication, and Torq-inference boundaries.
-- Report minimums of 1–3 pain-point hypotheses and exactly 2–3 talking points.
+- Normal report targets of 1–3 pain-point hypotheses and 2–3 talking points, plus partial-report behavior when evidence cannot support those targets.
 
 Provider calls should be mocked for deterministic contract tests. At least one live local smoke test must use the real Tavily, Firecrawl, LLM, and LangSmith integrations.
 

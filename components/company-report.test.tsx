@@ -81,11 +81,20 @@ const report: CompanyReportData = {
 describe("report citation rendering", () => {
   it("links visible claim badges to the normalized source URL", () => {
     const html = renderToStaticMarkup(
-      <GroundedClaimText claim={report.whatTheyDo} report={report} />,
+      <GroundedClaimText claim={report.whatTheyDo!} report={report} />,
     );
     expect(html).toContain('href="https://acme.example/about"');
     expect(html).toContain('class="source-badge"');
     expect(html).toContain("S1");
+  });
+
+  it("renders an honest empty company description for partial reports", () => {
+    const html = renderToStaticMarkup(
+      <CompanyReport report={{ ...report, whatTheyDo: null }} />,
+    );
+
+    expect(html).not.toContain("Acme automates security operations.");
+    expect(html).toContain("What they do");
   });
 });
 

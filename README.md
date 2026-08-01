@@ -102,7 +102,9 @@ claim -> evidence ID -> source ID -> real clickable URL
 
 Retrieval removes generic careers, jobs, newsroom, and index pages where they cannot support a specific finding. Corpus merging canonicalizes URLs and removes repeated excerpts. After classification, only node-selected evidence proceeds to synthesis; after synthesis, only cited lineage proceeds to validation and the UI.
 
-The LLM can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. `validateGroundedReport` checks strict Zod contracts, unique canonical URLs and excerpts, evidence-to-source integrity, complete citation coverage, one strongest source per hiring role and named technology, duplicate jobs and technologies, at least one evidence-backed pain-point hypothesis, and exactly 2–3 talking points. Invalid output is rejected; no deterministic fallback report is manufactured.
+The LLM can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. The final grounding stage checks strict Zod contracts, unique canonical URLs and excerpts, evidence-to-source integrity, complete citation coverage, one strongest source per hiring role and named technology, and duplicate jobs and technologies. An unsafe optional finding is omitted together with its unused lineage and explained in Confidence & gaps; it no longer discards an otherwise useful report. If final synthesis fails, the report still exposes grounded specialist findings without manufacturing pain points or talking points.
+
+Provider HTTP 4xx responses remain blocking because they indicate an invalid, unauthorized, rate-limited, or explicitly rejected request. Network failures, provider 5xx responses, unreadable 2xx payloads, missing evidence, LLM extraction failures, synthesis failures, and grounding omissions degrade into visible report gaps.
 
 ## LangSmith verification
 
@@ -131,7 +133,7 @@ Once all credentials are populated, verify:
 - Duplicate versions of the same job appear once and cite one strongest item-specific source.
 - Generic careers and index pages never appear as report evidence.
 - Named technologies appear once, cite one specific source, and are framed as possible Torq integration surfaces rather than known pain or buying intent.
-- Every completed report contains 1–3 pain-point hypotheses and exactly 2–3 company-specific talking points.
+- A well-supported report contains 1–3 pain-point hypotheses and 2–3 company-specific talking points; weak evidence produces an honest empty category and gap instead of blocking the report.
 - Report categories start closed and opening one closes the previously open category.
 
 The one-company known-domain case has passed and is preserved in `sample-report.md`. Complete the remaining cases above before deployment is considered.

@@ -140,7 +140,11 @@ export function CompanyReport({ report }: { report: CompanyReportData }) {
       <div className="report-accordion-stack">
         <ReportAccordionSection {...sectionProps("company", "What they do")}>
           <div className="report-section report-lead">
-            <GroundedClaimText claim={report.whatTheyDo} report={report} />
+            {report.whatTheyDo ? (
+              <GroundedClaimText claim={report.whatTheyDo} report={report} />
+            ) : (
+              <EmptyEvidence>No supported first-party company description was available.</EmptyEvidence>
+            )}
           </div>
         </ReportAccordionSection>
 

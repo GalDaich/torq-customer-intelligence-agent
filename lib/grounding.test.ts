@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GroundingValidationError,
   retainCitedLineage,
+  restoreGroundedReport,
   validateGroundedReport,
 } from "./grounding";
 import { CompanyReportSchema, SourceSchema, type CompanyReport } from "./schemas";
@@ -70,27 +71,45 @@ describe("strict schemas", () => {
     ).toThrow();
   });
 
-  it("requires the assignment minimum of a pain-point hypothesis and 2–3 talking points", () => {
+  it("allows an honest partial report while retaining upper bounds", () => {
     const report = validReport();
     report.likelyPainPoints = [];
-    expect(() => CompanyReportSchema.parse(report)).toThrow();
+    report.talkingPoints = [];
+    report.whatTheyDo = null;
+    expect(CompanyReportSchema.parse(report)).toMatchObject({
+      whatTheyDo: null,
+      likelyPainPoints: [],
+      talkingPoints: [],
+    });
 
-    const second = validReport();
-    second.talkingPoints = second.talkingPoints.slice(0, 1);
-    expect(() => CompanyReportSchema.parse(second)).toThrow();
-
-    const fourth = validReport();
-    fourth.talkingPoints.push(
-      { point: "Third", rationale: fourth.whatTheyDo },
-      { point: "Fourth", rationale: fourth.whatTheyDo },
+    const tooMany = validReport();
+    tooMany.talkingPoints.push(
+      { point: "Third", rationale: tooMany.whatTheyDo! },
+      { point: "Fourth", rationale: tooMany.whatTheyDo! },
     );
-    expect(() => CompanyReportSchema.parse(fourth)).toThrow();
+    expect(() => CompanyReportSchema.parse(tooMany)).toThrow();
   });
 });
 
 describe("grounding validation", () => {
   it("accepts a complete claim to evidence to source chain", () => {
     expect(validateGroundedReport(validReport())).toEqual(validReport());
+  });
+
+  it("accepts an evidence-free partial report with an explicit gap", () => {
+    const report = validReport();
+    report.whatTheyDo = null;
+    report.recentSignals = [];
+    report.hiringSignals = [];
+    report.securitySignals = [];
+    report.technologySignals = [];
+    report.likelyPainPoints = [];
+    report.talkingPoints = [];
+    report.confidenceAndGaps = ["Collected findings could not be safely retained."];
+    report.sources = [];
+    report.evidence = [];
+
+    expect(validateGroundedReport(report)).toEqual(report);
   });
 
   it("rejects evidence pointing to an unknown source", () => {
@@ -102,7 +121,7 @@ describe("grounding validation", () => {
 
   it("rejects claims pointing to unknown evidence", () => {
     const report = validReport();
-    report.whatTheyDo.evidenceIds = ["E404"];
+    report.whatTheyDo!.evidenceIds = ["E404"];
 
     expect(() => validateGroundedReport(report)).toThrow(
       "Claim references unknown evidence E404.",
@@ -342,5 +361,45 @@ describe("grounding validation", () => {
     };
     report.technologySignals = [signal, { ...signal, technology: "splunk" }];
     expect(() => validateGroundedReport(report)).toThrow("appears more than once");
+  });
+
+  it("restores the Rapyd failure mode by omitting grouped technologies", () => {
+    const report = validReport();
+    report.sources.push({
+      id: "S2",
+      title: "DevOps Engineer - Acme",
+      url: "https://acme.example/careers/positions/devops-engineer",
+      publisher: "acme.example",
+      sourceType: "technology",
+      publishedAt: null,
+    });
+    report.evidence.push({
+      id: "E2",
+      sourceId: "S2",
+      excerpt: "The role uses Terraform, Ansible, and CloudFormation.",
+      collectedAt: "2026-08-01T09:00:00.000Z",
+    });
+    report.technologySignals = [{
+      technology: "Terraform, Ansible, and CloudFormation",
+      category: "devops",
+      claim: {
+        text: "Acme lists Terraform, Ansible, and CloudFormation.",
+        evidenceIds: ["E2"],
+        confidence: "high",
+      },
+      torqRelevance: {
+        text: "The tools may identify an infrastructure automation surface.",
+        evidenceIds: ["E2"],
+        confidence: "medium",
+      },
+    }];
+
+    const restored = restoreGroundedReport(report);
+
+    expect(restored.technologySignals).toEqual([]);
+    expect(restored.evidence.map((evidence) => evidence.id)).toEqual(["E1"]);
+    expect(restored.confidenceAndGaps).toContain(
+      "Some technology signals were omitted because they grouped multiple tools, were duplicate, generic, or lacked one specific supporting source.",
+    );
   });
 });

@@ -24,8 +24,9 @@ ${TORQ_RELEVANCE_FRAME}
 - Represent each underlying event, job, or security fact once in its reporting category.
 - Preserve exactly one strongest evidence citation for each hiring role.
 - Derive likely pain points cautiously and label uncertainty through confidence and gaps.
-- Return 1–3 likely pain points as explicitly evidence-backed hypotheses relevant to security automation. Do not present a hypothesis as a known internal problem.
-- Return exactly 2–3 specific, natural first-call talking points tied to target-company evidence—not generic Torq pitches or asserted customer needs.
+- Return 1–3 likely pain points as explicitly evidence-backed hypotheses relevant to security automation when the evidence supports them. Otherwise return an empty list and explain the limitation in confidence and gaps. Do not present a hypothesis as a known internal problem.
+- Return 2–3 specific, natural first-call talking points tied to target-company evidence when supported. Otherwise return fewer or none and explain the limitation in confidence and gaps; never fill the quota with generic Torq pitches or asserted customer needs.
+- Set whatTheyDo to null only when no supplied evidence responsibly supports a plain-language company description, and record that limitation as a gap.
 - Use technology signals to identify credible integration or orchestration surfaces, but never treat the presence of one tool as proof of fragmentation, manual work, or replacement intent.
 - Consolidate the supplied retrieval and extraction limitations into 1–6 candid, concrete, non-repetitive confidence-and-gap bullets. Keep only what a human should verify before acting.
 </task>

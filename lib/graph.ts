@@ -18,7 +18,7 @@ import {
   retainStrongHiringEvidence,
   retainStrongTechnologyEvidence,
 } from "./evidence-quality";
-import { retainCitedLineage, validateGroundedReport } from "./grounding";
+import { restoreGroundedReport } from "./grounding";
 import {
   CompanyReportSchema,
   EvidenceSchema,
@@ -45,10 +45,9 @@ import {
 } from "./research-plans";
 import {
   assertResearchEnvironment,
+  isProviderClientError,
   mapFirecrawl,
   mergeCorpora,
-  ProtectedBoundaryError,
-  ProviderError,
   requireServerEnv,
   scrapeFirecrawl,
   searchTavily,
@@ -64,7 +63,7 @@ const ResearchCorpusSchema = z
 
 const ReportContentSchema = z
   .object({
-    whatTheyDo: GroundedClaimSchema,
+    whatTheyDo: GroundedClaimSchema.nullable(),
     recentSignals: z.array(RecentSignalSchema),
     hiringSignals: HiringSignalsSchema.shape.signals,
     securitySignals: z.array(SecuritySignalSchema),
@@ -76,7 +75,7 @@ const ReportContentSchema = z
           rationale: GroundedClaimSchema,
         })
         .strict(),
-    ).min(1).max(3),
+    ).max(3),
     talkingPoints: z.array(
       z
         .object({
@@ -84,7 +83,7 @@ const ReportContentSchema = z
           rationale: GroundedClaimSchema,
         })
         .strict(),
-    ).min(2).max(3),
+    ).max(3),
     confidenceAndGaps: z.array(z.string().min(1)).min(1).max(6),
   })
   .strict();
@@ -159,6 +158,27 @@ const STAGE_MESSAGES: Record<
   },
 };
 
+function emptyGroundedReport(
+  researchId: string,
+  company: ResolvedCompany,
+  reason: string,
+): CompanyReport {
+  return CompanyReportSchema.parse({
+    researchId,
+    company,
+    whatTheyDo: null,
+    recentSignals: [],
+    hiringSignals: [],
+    securitySignals: [],
+    technologySignals: [],
+    likelyPainPoints: [],
+    talkingPoints: [],
+    confidenceAndGaps: [reason],
+    sources: [],
+    evidence: [],
+  });
+}
+
 class ResearchStageError extends Error {
   readonly stage: ResearchStage;
   readonly originalError: unknown;
@@ -207,10 +227,7 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
       limit: 10,
     });
   } catch (error) {
-    if (
-      error instanceof ProviderError &&
-      (error.status === 401 || error.status === 403)
-    ) {
+    if (isProviderClientError(error)) {
       throw error;
     }
     gaps.push("The official site map could not be read; first-party research used the homepage only.");
@@ -249,8 +266,7 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
       corpora.push(result.value);
     } else if (
       result.status === "rejected" &&
-      result.reason instanceof ProviderError &&
-      (result.reason.status === 401 || result.reason.status === 403)
+      isProviderClientError(result.reason)
     ) {
       throw result.reason;
     } else {
@@ -281,8 +297,7 @@ async function searchPatterns(
   settled.forEach((result, index) => {
     if (result.status === "fulfilled") corpora.push(result.value);
     else if (
-      result.reason instanceof ProviderError &&
-      (result.reason.status === 401 || result.reason.status === 403)
+      isProviderClientError(result.reason)
     ) {
       throw result.reason;
     }
@@ -315,7 +330,8 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
       firstPartyResult: firstPartyContext,
       firstPartyGaps: gaps,
     };
-  } catch {
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
     return {
       firstPartyCorpus: { sources: [], evidence: [] },
       firstPartyGaps: [...gaps, "First-party evidence extraction failed; no finding was substituted."],
@@ -351,7 +367,8 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       recentCorpus: selectedCorpus,
       recentResult: { ...recentSignals, gaps: [...gaps, ...recentSignals.gaps] },
     };
-  } catch {
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
     return {
       recentCorpus: { sources: [], evidence: [] },
       recentResult: {
@@ -388,7 +405,8 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       hiringCorpus: selectedCorpus,
       hiringResult: { ...hiringSignals, gaps: [...gaps, ...hiringSignals.gaps] },
     };
-  } catch {
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
     return {
       hiringCorpus: { sources: [], evidence: [] },
       hiringResult: {
@@ -428,7 +446,8 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       securityCorpus: selectedCorpus,
       securityResult: { ...securitySignals, gaps: [...gaps, ...securitySignals.gaps] },
     };
-  } catch {
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
     return {
       securityCorpus: { sources: [], evidence: [] },
       securityResult: {
@@ -469,7 +488,8 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
       technologyCorpus: selectedCorpus,
       technologyResult: { ...technologySignals, gaps: [...gaps, ...technologySignals.gaps] },
     };
-  } catch {
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
     return {
       technologyCorpus: { sources: [], evidence: [] },
       technologyResult: {
@@ -489,12 +509,6 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
     state.securityCorpus ?? { sources: [], evidence: [] },
     state.technologyCorpus ?? { sources: [], evidence: [] },
   ]);
-  if (corpus.evidence.length === 0) {
-    throw new ProtectedBoundaryError(
-      "No usable public evidence was collected; no report was fabricated.",
-    );
-  }
-
   const recentSignals = state.recentResult ?? {
     signals: [],
     confidence: "low" as const,
@@ -523,6 +537,39 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
     ...securitySignals.gaps,
     ...technologySignals.gaps,
   ];
+
+  const partialReport = (reason: string): CompanyReport => {
+    try {
+      return restoreGroundedReport({
+        researchId: state.researchId,
+        company: state.company,
+        whatTheyDo: state.firstPartyResult?.whatTheyDo ?? null,
+        recentSignals: recentSignals.signals,
+        hiringSignals: hiringSignals.signals,
+        securitySignals: securitySignals.signals,
+        technologySignals: technologySignals.signals,
+        likelyPainPoints: [],
+        talkingPoints: [],
+        confidenceAndGaps: [...new Set([...nodeGaps, reason])].slice(0, 6),
+        sources: corpus.sources,
+        evidence: corpus.evidence,
+      });
+    } catch {
+      return emptyGroundedReport(
+        state.researchId,
+        state.company,
+        `${reason} Collected findings could not be safely retained.`,
+      );
+    }
+  };
+
+  if (corpus.evidence.length === 0) {
+    return {
+      reportCandidate: partialReport(
+        "No usable public evidence was collected; the report is intentionally empty rather than fabricated.",
+      ),
+    };
+  }
   const synthesizer = model().withStructuredOutput(ReportContentSchema, {
     name: "synthesize_customer_intelligence_report",
     strict: true,
@@ -543,26 +590,31 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
         nodeGaps,
       }),
     );
-  } catch {
-    throw new ProtectedBoundaryError("LLM synthesis failed; no report was produced.");
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
+    return {
+      reportCandidate: partialReport(
+        "Final synthesis failed; grounded specialist findings are shown without synthesized pain points or talking points.",
+      ),
+    };
   }
 
   let reportCandidate: CompanyReport;
   try {
-    reportCandidate = retainCitedLineage(
-      CompanyReportSchema.parse({
-        researchId: state.researchId,
-        company: state.company,
-        ...content,
-        confidenceAndGaps: content.confidenceAndGaps,
-        sources: corpus.sources,
-        evidence: corpus.evidence,
-      }),
-    );
+    reportCandidate = CompanyReportSchema.parse({
+      researchId: state.researchId,
+      company: state.company,
+      ...content,
+      confidenceAndGaps: content.confidenceAndGaps,
+      sources: corpus.sources,
+      evidence: corpus.evidence,
+    });
   } catch {
-    throw new ProtectedBoundaryError(
-      "Grounding validation rejected an invalid report contract.",
-    );
+    return {
+      reportCandidate: partialReport(
+        "The synthesized report contract was invalid; grounded specialist findings are shown instead.",
+      ),
+    };
   }
   return { reportCandidate };
 };
@@ -570,11 +622,15 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
 const validateReportNode: GraphNode<typeof ResearchState> = (state) => {
   if (!state.reportCandidate) throw new Error("Report synthesis did not produce a candidate.");
   try {
-    return { report: validateGroundedReport(state.reportCandidate) };
+    return { report: restoreGroundedReport(state.reportCandidate) };
   } catch {
-    throw new ProtectedBoundaryError(
-      "Grounding validation rejected unsupported report claims.",
-    );
+    return {
+      report: emptyGroundedReport(
+        state.researchId,
+        state.company,
+        "The collected findings could not be safely grounded and were omitted from this partial report.",
+      ),
+    };
   }
 };
 
