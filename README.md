@@ -16,6 +16,7 @@ The implementation is complete through deterministic tests, production build, br
 8. Deterministically rejects unsupported evidence references.
 9. Returns successful company reports even when another company fails.
 10. Streams real graph-stage progress to the browser and records a timestamped run log.
+11. Presents completed reports as a company launchpad and opens each full report in its own company-named browser tab.
 
 ## Local prerequisites
 

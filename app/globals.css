@@ -293,6 +293,13 @@ code {
   letter-spacing: -0.025em;
 }
 
+.results-description {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .section-heading > p {
   max-width: 380px;
   margin: 0;
@@ -705,6 +712,83 @@ code {
   padding: 0 0 5px;
 }
 
+.report-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.report-launch-item {
+  display: grid;
+  gap: 8px;
+}
+
+.report-launch-card {
+  display: grid;
+  min-height: 150px;
+  align-content: space-between;
+  gap: 32px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  padding: 23px;
+  color: var(--text-primary);
+  text-align: left;
+  background:
+    linear-gradient(145deg, rgba(141, 116, 255, 0.1), transparent 52%),
+    rgba(16, 19, 26, 0.9);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.report-launch-card:hover,
+.report-launch-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(183, 168, 255, 0.68);
+  background:
+    linear-gradient(145deg, rgba(141, 116, 255, 0.16), transparent 58%),
+    rgba(21, 25, 36, 0.96);
+}
+
+.report-launch-card:focus-visible {
+  outline: 3px solid rgba(141, 116, 255, 0.22);
+  outline-offset: 3px;
+}
+
+.report-launch-card strong {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.report-launch-card span {
+  overflow: hidden;
+  color: var(--accent-bright);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-launch-error {
+  margin: -5px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.report-tab-shell {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 40px 0 80px;
+}
+
+.report-tab-error {
+  width: min(720px, calc(100% - 40px));
+  margin: 80px auto;
+  color: var(--danger);
+  font-size: 14px;
+}
+
 .failure-panel {
   border-radius: 13px;
   padding: 18px;
@@ -1090,6 +1174,7 @@ code {
   }
 
   .candidate-grid,
+  .report-launch-grid,
   .report-grid,
   .talking-grid,
   .confidence-panel ul,
@@ -1103,6 +1188,11 @@ code {
 
   .research-id {
     text-align: left;
+  }
+
+  .report-tab-shell {
+    width: min(100% - 24px, 1180px);
+    padding: 24px 0 48px;
   }
 
   .failure-panel li {

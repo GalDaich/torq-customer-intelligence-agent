@@ -62,7 +62,7 @@ export function CompanyTagInput({ companies, onChange, disabled = false }: Props
 
   return (
     <div className="tag-input-group">
-      <label htmlFor="company-input">Companies</label>
+      <label htmlFor="company-input">Companies to research</label>
       <div className={`tag-input ${disabled ? "is-disabled" : ""}`}>
         {companies.map((company) => (
           <span className="tag" key={company.toLocaleLowerCase()}>

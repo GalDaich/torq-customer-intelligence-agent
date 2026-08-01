@@ -46,7 +46,7 @@ export function ResearchProgress({
     ? percentage === 100
       ? "Research run completed."
       : "Research run finished with incomplete stages."
-    : active?.message ?? "Preparing independent company runs…";
+    : active?.message ?? "Preparing company research…";
 
   return (
     <section className="progress-panel" aria-live="polite" aria-labelledby="progress-title">

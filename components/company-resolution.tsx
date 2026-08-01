@@ -13,10 +13,10 @@ export function CompanyResolutionList({ resolutions, selections, onSelect }: Pro
     <section className="resolution-panel" aria-labelledby="resolution-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Identity check</p>
-          <h2 id="resolution-title">Confirm the right companies</h2>
+          <p className="eyebrow">Company match</p>
+          <h2 id="resolution-title">Which company did you mean?</h2>
         </div>
-        <p>Single matches continue automatically. Only ambiguous names require your selection.</p>
+        <p>Pick the right match so the agent researches the customer you intended.</p>
       </div>
 
       <div className="resolution-list">

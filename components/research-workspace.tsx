@@ -10,9 +10,9 @@ import {
   type ResolvedCompany,
 } from "@/lib/schemas";
 import { readResearchStream } from "@/lib/research-stream";
-import { CompanyReport } from "./company-report";
 import { CompanyResolutionList } from "./company-resolution";
 import { CompanyTagInput } from "./company-tag-input";
+import { ReportLaunchCard } from "./report-launchpad";
 import { ResearchProgress } from "./research-progress";
 
 type Phase = "input" | "resolving" | "resolution" | "researching" | "results";
@@ -179,15 +179,15 @@ export function ResearchWorkspace() {
         <div className="brand-mark" aria-label="Torq">
           TQ
         </div>
-        <span>Customer intelligence</span>
+        <span>Customer Intelligence Agent</span>
       </header>
 
       <section className="hero">
-        <p className="eyebrow">Evidence before assertion</p>
-        <h1>Walk into the next security conversation prepared.</h1>
+        <p className="eyebrow">AI-powered account research</p>
+        <h1>Turn public company signals into your next customer conversation.</h1>
         <p className="hero-copy">
-          Resolve the right companies, research current public signals, and turn traceable evidence
-          into useful Torq talking points.
+          Research up to five companies at once and get concise reports on what they do, recent
+          activity, security and hiring signals, likely pain points, and tailored talking points.
         </p>
       </section>
 
@@ -196,7 +196,7 @@ export function ResearchWorkspace() {
         <div className="action-row">
           {phase === "input" || phase === "resolving" ? (
             <button className="primary-button" type="button" disabled={busy} onClick={resolveCompanies}>
-              {phase === "resolving" ? "Resolving companies…" : "Resolve companies"}
+              {phase === "resolving" ? "Finding companies…" : "Research companies"}
             </button>
           ) : (
             <button className="secondary-button" type="button" disabled={busy} onClick={editCompanies}>
@@ -222,7 +222,7 @@ export function ResearchWorkspace() {
               <span>
                 {unresolvedAmbiguity
                   ? "Choose every ambiguous company to continue."
-                  : "Each company will run as an independent trace."}
+                  : "The agent will build a separate intelligence report for each company."}
               </span>
             </div>
             <button
@@ -237,11 +237,10 @@ export function ResearchWorkspace() {
         </>
       )}
 
-      {(phase === "researching" || (phase === "results" && progressEvents.length > 0)) && (
+      {phase === "researching" && (
         <ResearchProgress
           companies={activeCompanies}
           events={progressEvents}
-          finished={phase === "results"}
         />
       )}
 
@@ -249,8 +248,13 @@ export function ResearchWorkspace() {
         <section className="results-area">
           <div className="results-heading">
             <div>
-              <p className="eyebrow">Validated output</p>
+              <p className="eyebrow">Company report launchpad</p>
               <h2>{reports.length} {reports.length === 1 ? "report" : "reports"} ready</h2>
+              {reports.length > 0 && (
+                <p className="results-description">
+                  Open a company to view its full intelligence report in a separate tab.
+                </p>
+              )}
             </div>
             <button className="secondary-button" type="button" onClick={editCompanies}>
               Start another research set
@@ -272,9 +276,11 @@ export function ResearchWorkspace() {
             </div>
           )}
 
-          {reports.map((report) => (
-            <CompanyReport report={report} key={report.researchId} />
-          ))}
+          <div className="report-launch-grid">
+            {reports.map((report) => (
+              <ReportLaunchCard report={report} key={report.researchId} />
+            ))}
+          </div>
         </section>
       )}
     </main>

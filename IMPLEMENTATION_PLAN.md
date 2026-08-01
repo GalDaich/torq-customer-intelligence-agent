@@ -12,7 +12,7 @@ Completed locally:
 - Tavily-backed name/domain resolution, strict LLM identity normalization, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
 - LangGraph task-event streaming with an event-driven progress bar and browser activity log.
 - Correlated structured JSON logs across resolution, batch, graph-stage, and provider boundaries.
-- Torq-inspired responsive browser UI with source badges and visible gaps.
+- Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, source badges, and visible gaps.
 - Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
 
 Pending before the local milestone can be called complete:
