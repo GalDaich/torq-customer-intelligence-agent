@@ -15,9 +15,15 @@ function identity(company: ResolvedCompany): string {
   return `"${company.name}" ${company.domain}`;
 }
 
-const preciseSearch = {
+const advancedSearch = {
   searchDepth: "advanced" as const,
   chunksPerSource: 2 as const,
+  maxResults: 5,
+  minimumScore: 0.45,
+};
+
+const basicSearch = {
+  searchDepth: "basic" as const,
   maxResults: 5,
   minimumScore: 0.45,
 };
@@ -26,19 +32,13 @@ export function recentSignalSearchPlan(company: ResolvedCompany): FocusedSearchP
   const target = identity(company);
   return [
     {
-      ...preciseSearch,
-      query: `site:${company.domain} "${company.name}" funding acquisition expansion leadership announcement`,
+      ...basicSearch,
+      query: `site:${company.domain} "${company.name}" funding acquisition expansion leadership product launch partnership announcement`,
       topic: "general",
       timeRange: "year",
     },
     {
-      ...preciseSearch,
-      query: `site:${company.domain} "${company.name}" product launch partnership announcement`,
-      topic: "general",
-      timeRange: "year",
-    },
-    {
-      ...preciseSearch,
+      ...advancedSearch,
       query: `${target} recent funding product launch acquisition leadership announcement`,
       topic: "news",
       timeRange: "year",
@@ -51,13 +51,13 @@ export function hiringSignalSearchPlan(company: ResolvedCompany): FocusedSearchP
   const target = identity(company);
   return [
     {
-      ...preciseSearch,
+      ...advancedSearch,
       query: `${target} open security SOC incident response cloud security identity job role`,
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,
     },
     {
-      ...preciseSearch,
+      ...advancedSearch,
       query: `${target} open platform engineering DevSecOps infrastructure IT automation job role`,
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,
@@ -69,12 +69,12 @@ export function securitySignalSearchPlan(company: ResolvedCompany): FocusedSearc
   const target = identity(company);
   return [
     {
-      ...preciseSearch,
+      ...advancedSearch,
       query: `${target} security operations SOC incident response compliance security team automation`,
       topic: "general",
     },
     {
-      ...preciseSearch,
+      ...basicSearch,
       query: `${target} breach vulnerability cloud security identity phishing threat response`,
       topic: "news",
       timeRange: "year",
@@ -86,17 +86,17 @@ export function technologySignalSearchPlan(company: ResolvedCompany): FocusedSea
   const target = identity(company);
   return [
     {
-      ...preciseSearch,
+      ...advancedSearch,
       query: `${target} publicly used SIEM EDR XDR IAM cloud security tools technology stack`,
       topic: "general",
     },
     {
-      ...preciseSearch,
+      ...basicSearch,
       query: `site:${company.domain} engineering architecture AWS Azure GCP Kubernetes security stack`,
       topic: "general",
     },
     {
-      ...preciseSearch,
+      ...basicSearch,
       query: `${target} jobs Splunk Sentinel CrowdStrike Okta Wiz ServiceNow Jira Slack`,
       topic: "general",
       excludeDomains: JOB_AGGREGATORS,

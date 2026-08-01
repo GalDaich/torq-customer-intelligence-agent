@@ -6,7 +6,7 @@ Completed locally:
 
 - Next.js App Router TypeScript application and server-only environment contract.
 - Strict Zod schemas and deterministic claim-to-evidence-to-source validation, including generic-source and duplicate-job rejection.
-- Tavily and Firecrawl normalization wrappers.
+- Tavily and Firecrawl normalization wrappers with fixed free-tier budgets and Firecrawl request gating.
 - Five parallel research nodes, including named technology-stack research, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, graph trace tags, and pre-graph identity-normalization tracing.
 - Tavily-backed primary-homepage discovery, few-shot LLM identity ranking and normalization, mandatory per-company confirmation/manual entry/discard, independent batch execution, and partial failures.
@@ -517,7 +517,7 @@ The research nodes should be parallelizable because they are independent evidenc
 #### `recentSignals`
 
 - Tool: Tavily Search.
-- Two advanced-depth, score-filtered searches for recent funding/expansion/leadership and product/partnership activity, constrained to the last year.
+- One Basic official-domain search plus one Advanced external-news search for recent funding, expansion, leadership, product, and partnership activity, constrained to the last year.
 - Extract only evidence-backed signals.
 
 #### `hiringSignals`
@@ -538,7 +538,7 @@ The research nodes should be parallelizable because they are independent evidenc
 #### `securitySignals`
 
 - Tool: Tavily Search.
-- Advanced-depth plans separate durable security/compliance evidence from one-year incident and threat news.
+- One Advanced durable security/compliance search plus one Basic one-year incident and threat-news search.
 
 ```text
 "{company}" security operations SOC incident response compliance security team automation
@@ -550,7 +550,7 @@ The research nodes should be parallelizable because they are independent evidenc
 #### `technologySignals`
 
 - Tool: Tavily Search.
-- Three advanced-depth, score-filtered plans inspect public security-stack mentions, first-party engineering architecture, and specific job requirements.
+- One Advanced open-web plan plus two Basic precise plans inspect public security-stack mentions, first-party engineering architecture, and specific job requirements.
 - Accept only explicitly named technologies from a specific company page, engineering article, technical document, case study, or individual job posting.
 - Return one signal per technology with one shared strongest evidence record for both the factual use claim and bounded Torq relevance.
 - Treat a named tool as a potential integration surface, never as proof of fragmentation, manual work, pain, or buying intent.
@@ -803,6 +803,7 @@ Add tests only around behavior that protects the contracts:
 - Fragmented newline-delimited progress stream parsing.
 - Event-driven progress rendering without activity-log output.
 - Node-specific Tavily query/depth/recency/domain/score plans and Firecrawl map/scrape options.
+- Tavily's fixed 15-credit total per company and Firecrawl's shared two-request, ten-per-endpoint-per-minute free-tier gate.
 - Named-technology specificity, one-source selection, deduplication, and Torq-inference boundaries.
 - Normal report targets of 1–3 pain-point hypotheses and 2–3 talking points, plus partial-report behavior when evidence cannot support those targets.
 

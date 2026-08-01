@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  FIRECRAWL_FREE_TIER_LIMITS,
   isProviderClientError,
   mapFirecrawl,
   mergeCorpora,
   ProviderError,
+  RequestBudgetGate,
   scrapeFirecrawl,
   searchTavily,
 } from "./tools";
@@ -111,7 +113,7 @@ describe("provider normalization", () => {
     });
 
     const links = await mapFirecrawl(
-      { url: "https://acme.example", search: "products platform", limit: 10 },
+      { url: "https://acme.example", search: "products platform", limit: 5 },
       { apiKey: "test-key", fetchImpl },
     );
 
@@ -120,7 +122,7 @@ describe("provider normalization", () => {
       sitemap: "include",
       includeSubdomains: false,
       ignoreQueryParameters: true,
-      limit: 10,
+      limit: 5,
     });
     expect(links[0].url).toBe("https://acme.example/platform");
   });
@@ -286,5 +288,53 @@ describe("provider normalization", () => {
     expect(isProviderClientError(new ProviderError("Tavily", "rate limited", 429))).toBe(true);
     expect(isProviderClientError(new ProviderError("Tavily", "unavailable", 503))).toBe(false);
     expect(isProviderClientError(new Error("classification failed"))).toBe(false);
+  });
+
+  it("caps Firecrawl concurrency across map and scrape requests", async () => {
+    const gate = new RequestBudgetGate(
+      FIRECRAWL_FREE_TIER_LIMITS.maxConcurrency,
+      { map: 100, scrape: 100 },
+      60_000,
+    );
+    let active = 0;
+    let maximumActive = 0;
+    const request = async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+    };
+
+    await Promise.all([
+      gate.run("map", request),
+      gate.run("scrape", request),
+      gate.run("scrape", request),
+      gate.run("map", request),
+    ]);
+
+    expect(maximumActive).toBe(2);
+  });
+
+  it("paces map and scrape in separate free-tier rate windows", async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const gate = new RequestBudgetGate(
+      2,
+      { map: 2, scrape: 2 },
+      1_000,
+      () => now,
+      async (durationMs) => {
+        waits.push(durationMs);
+        now += durationMs;
+      },
+    );
+    const request = async () => "ok";
+
+    await gate.run("map", request);
+    await gate.run("map", request);
+    await gate.run("map", request);
+    await gate.run("scrape", request);
+
+    expect(waits).toEqual([1_000]);
   });
 });

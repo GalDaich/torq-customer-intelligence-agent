@@ -74,7 +74,7 @@ securitySignals ───┤
 technologySignals ─┘
 ```
 
-The five research nodes run in parallel. The LLM cannot author queries. Firecrawl maps the confirmed official site and scrapes only the homepage plus the strongest company/platform/product/about targets. Tavily uses dedicated natural-language plans per open-web node, advanced relevance chunks, bounded result counts, calibrated score thresholds, one-year recency for recent signals, official-domain searches for authoritative announcements, and job-aggregator exclusions where direct postings are preferred. Each node passes only the evidence IDs selected in its typed output into synthesis, so omitted raw search results cannot be reintroduced later. The final validation node has no LLM.
+The five research nodes run in parallel. The LLM cannot author queries. Firecrawl maps at most five official-site URLs and scrapes only the homepage plus the two strongest company/platform/product/about targets. A shared free-tier gate limits Firecrawl to two concurrent requests and ten starts per endpoint per minute. Tavily uses Advanced depth for broad evidence discovery and Basic depth for precise official-domain, recent-incident, and named-tool searches. All searches retain bounded result counts, calibrated score thresholds, one-year recency where relevant, and job-aggregator exclusions where direct postings are preferred. The fixed plan costs 14 Tavily research credits plus one Basic resolution credit per company. Each node passes only selected evidence IDs into synthesis, so omitted raw results cannot be reintroduced later. The final validation node has no LLM.
 
 Every LLM instruction lives in its own editable TypeScript module under `prompts/`. The graph and normalization code contain no inline system or user prompts.
 
@@ -146,6 +146,7 @@ The one-company known-domain case has passed and is preserved in `sample-report.
 - Research uses one long-lived HTTP request per batch and streams newline-delimited progress events while it runs.
 - The progress stream is transient UI state and is not retained as activity history.
 - Provider rate limits and latency affect one-to-five company batches.
+- On the Firecrawl free plan, batches that require more than ten scrapes are intentionally paced across minute windows instead of risking a blocking 429 response.
 - The included HiBob sample proves one real single-company run; it does not replace the pending five-company, ambiguity, failure, and LangSmith-trace acceptance checks.
 - A fresh npm advisory audit was blocked in this environment. The install reported three high-severity findings in the full dependency tree; re-run `npm audit` in an approved environment and review findings before deployment.
 

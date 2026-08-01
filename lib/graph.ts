@@ -224,7 +224,7 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
     mappedLinks = await mapFirecrawl({
       url: origin,
       search: "company overview products platform solutions about",
-      limit: 10,
+      limit: 5,
     });
   } catch (error) {
     if (isProviderClientError(error)) {

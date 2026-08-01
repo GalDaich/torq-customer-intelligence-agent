@@ -24,8 +24,8 @@ Source of truth: [Torq AI Solutions Engineer take-home assignment](https://drive
 
 ## Retrieval responsibilities
 
-- Firecrawl is used where full first-party page content matters. Site mapping replaces guessed `/products` paths; only three targeted pages are scraped, main content is isolated, boilerplate tags are excluded, and a one-day cache window limits avoidable cost.
-- Tavily is used for open-web discovery. Evidence nodes use advanced depth with two relevant chunks per source, five-result limits, 0.45 relevance thresholds for focused searches, a calibrated 0.35 threshold for external news, one-year filters for recent signals, and job-aggregator exclusions where direct sources are stronger. Resolution remains a cheaper basic search.
+- Firecrawl is used where full first-party page content matters. Site mapping is capped at five URLs, only three targeted pages are scraped, main content is isolated, boilerplate tags are excluded, and a one-day cache window limits avoidable work. A shared gate matches the free plan's two-request concurrency and separate ten-per-minute map and scrape limits.
+- Tavily is used for open-web discovery. Broad discovery uses Advanced depth with two relevant chunks; precise official-domain, incident-news, and named-tool searches use Basic depth. Every search keeps five-result limits, calibrated score thresholds, one-year filters where relevant, and job-aggregator exclusions where direct sources are stronger. The deterministic budget is 14 research credits plus one Basic resolution credit per company.
 - Provider payloads are normalized into strict `Source` and `Evidence` records. Canonical URLs, repeated excerpts, duplicate jobs, duplicate technologies, generic pages, and uncited lineage are deterministically rejected or removed.
 
 ## Torq product frame

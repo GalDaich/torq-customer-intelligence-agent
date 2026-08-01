@@ -77,6 +77,76 @@ export type TavilySearchInput = {
 
 export type FirecrawlMapLink = z.infer<typeof FirecrawlMapResponseSchema>["links"][number];
 
+export const FIRECRAWL_FREE_TIER_LIMITS = {
+  maxConcurrency: 2,
+  requestsPerMinute: {
+    map: 10,
+    scrape: 10,
+  },
+  windowMs: 60_000,
+} as const;
+
+type RequestBudgetBucket = keyof typeof FIRECRAWL_FREE_TIER_LIMITS.requestsPerMinute;
+
+export class RequestBudgetGate {
+  private active = 0;
+  private readonly waiters: Array<() => void> = [];
+  private readonly requestTimes = new Map<RequestBudgetBucket, number[]>();
+
+  constructor(
+    private readonly maxConcurrency: number,
+    private readonly requestsPerWindow: Record<RequestBudgetBucket, number>,
+    private readonly windowMs: number,
+    private readonly now: () => number = Date.now,
+    private readonly sleep: (durationMs: number) => Promise<void> =
+      (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
+  ) {}
+
+  private async acquireConcurrency(): Promise<void> {
+    if (this.active < this.maxConcurrency) {
+      this.active += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+  }
+
+  private releaseConcurrency(): void {
+    const next = this.waiters.shift();
+    if (next) next();
+    else this.active -= 1;
+  }
+
+  private async reserveRateSlot(bucket: RequestBudgetBucket): Promise<void> {
+    while (true) {
+      const now = this.now();
+      const cutoff = now - this.windowMs;
+      const recent = (this.requestTimes.get(bucket) ?? []).filter((time) => time > cutoff);
+      if (recent.length < this.requestsPerWindow[bucket]) {
+        recent.push(now);
+        this.requestTimes.set(bucket, recent);
+        return;
+      }
+      await this.sleep(Math.max(1, recent[0] + this.windowMs - now));
+    }
+  }
+
+  async run<T>(bucket: RequestBudgetBucket, request: () => Promise<T>): Promise<T> {
+    await this.acquireConcurrency();
+    try {
+      await this.reserveRateSlot(bucket);
+      return await request();
+    } finally {
+      this.releaseConcurrency();
+    }
+  }
+}
+
+const firecrawlFreeTierGate = new RequestBudgetGate(
+  FIRECRAWL_FREE_TIER_LIMITS.maxConcurrency,
+  FIRECRAWL_FREE_TIER_LIMITS.requestsPerMinute,
+  FIRECRAWL_FREE_TIER_LIMITS.windowMs,
+);
+
 export type ResearchCorpus = {
   sources: Source[];
   evidence: Evidence[];
@@ -276,7 +346,7 @@ export async function mapFirecrawl(
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<FirecrawlMapLink[]> {
   const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
-  const payload = await providerJson(
+  const request = () => providerJson(
     "Firecrawl",
     "https://api.firecrawl.dev/v2/map",
     {
@@ -291,12 +361,15 @@ export async function mapFirecrawl(
         sitemap: "include",
         includeSubdomains: false,
         ignoreQueryParameters: true,
-        limit: input.limit ?? 8,
+        limit: input.limit ?? 5,
         timeout: 30_000,
       }),
     },
     options.fetchImpl ?? fetch,
   );
+  const payload = options.fetchImpl
+    ? await request()
+    : await firecrawlFreeTierGate.run("map", request);
   const parsed = FirecrawlMapResponseSchema.safeParse(payload);
   if (!parsed.success || !parsed.data.success) {
     throw new ProviderError("Firecrawl", "Firecrawl could not map the official website.");
@@ -324,7 +397,7 @@ export async function scrapeFirecrawl(
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
   const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
-  const payload = await providerJson(
+  const request = () => providerJson(
     "Firecrawl",
     "https://api.firecrawl.dev/v2/scrape",
     {
@@ -346,6 +419,9 @@ export async function scrapeFirecrawl(
     },
     options.fetchImpl ?? fetch,
   );
+  const payload = options.fetchImpl
+    ? await request()
+    : await firecrawlFreeTierGate.run("scrape", request);
 
   const parsed = FirecrawlResponseSchema.safeParse(payload);
   if (!parsed.success || !parsed.data.success || !parsed.data.data?.markdown) {
