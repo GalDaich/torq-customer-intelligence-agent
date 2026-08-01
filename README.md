@@ -65,5 +65,5 @@ The research flow uses bounded Tavily searches and targeted Firecrawl extraction
 
 The two additional submission files are:
 
-- [Historical live-run HiBob sample](./docs/SAMPLE-REPORT.md)
+- [Validated live-run Datadog sample](./docs/SAMPLE-REPORT.md)
 - [Short build and architecture note](./docs/SUBMISSION-NOTE.md)
