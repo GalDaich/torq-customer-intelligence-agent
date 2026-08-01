@@ -1,0 +1,749 @@
+# Customer Intelligence Agent — Implementation Plan
+
+## Implementation status — 2026-08-01
+
+Completed locally:
+
+- Next.js App Router TypeScript application and server-only environment contract.
+- Strict Zod schemas and deterministic claim-to-evidence-to-source validation.
+- Tavily and Firecrawl normalization wrappers.
+- Four parallel research nodes, LLM synthesis, and deterministic final validation.
+- Per-company UUID, LangGraph `thread_id`, LangSmith metadata, and trace tag propagation.
+- Tavily-backed resolution, explicit ambiguity selection, independent batch execution, and partial failures.
+- Torq-inspired responsive browser UI with source badges and visible gaps.
+- Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
+
+Pending before the local milestone can be called complete:
+
+- Populate real provider and LangSmith credentials.
+- Run the one-company, ambiguous-name, five-company, weak-data, and provider-failure live checks.
+- Verify matching LangSmith traces and every external source link.
+- Replace the honest placeholder in `sample-report.md` with output from a real run.
+- Re-run the npm advisory audit in an environment approved to query npm's advisory service.
+
+Deployment and domain work remain deferred.
+
+## Purpose
+
+Build a local-first Level 1 Customer Intelligence Agent for Torq's AI Solutions Engineer take-home assignment.
+
+The product must let a non-technical account executive or CSM:
+
+1. Enter one to five companies using removable tags.
+2. Resolve ambiguous company names through public web search.
+3. Select the correct company when multiple matches are found.
+4. Run grounded company research.
+5. Read a concise, useful report with clickable supporting sources.
+
+The first milestone is local execution and behavioral verification. Deployment to Vercel and configuration of a purchased domain are separate decisions after the local product is working well.
+
+## Working rules
+
+- Keep the implementation lean. Every file, dependency, function, and field must have a clear purpose.
+- Do not add Level 2 functionality during Level 1 implementation.
+- Keep all provider keys server-side.
+- Treat evidence and grounding as correctness requirements, not optional polish.
+- Use strict, fixed contracts for every node boundary.
+- Do not let the LLM invent URLs, source titles, evidence excerpts, or unsupported claims.
+- Add short inline comments where code crosses a system boundary or a non-obvious decision needs explanation. Do not comment obvious syntax.
+- Update this plan when a milestone is completed or an agreed design decision changes.
+
+## Scope
+
+### Included in Level 1
+
+- Tag-based company input.
+- Maximum of five companies per research request.
+- Public web search for company identity resolution.
+- Human selection for ambiguous company matches.
+- Separate LangGraph research nodes for:
+  - First-party company context.
+  - Recent news, funding, product, and leadership signals.
+  - Hiring signals.
+  - Security and operational signals.
+- Tavily for web search.
+- Firecrawl for targeted first-party page scraping.
+- LLM analysis inside research nodes and final report synthesis.
+- Strict Zod contracts for data exchange.
+- Evidence-backed claims with source IDs.
+- Compact clickable source links in every report.
+- One UUID and one independently traceable LangSmith graph execution per company.
+- Honest loading, empty, ambiguity, low-confidence, and failure states.
+- Local README and generated sample report.
+
+### Explicitly deferred
+
+- Watchlist management.
+- Change detection.
+- Scheduled refreshes.
+- Database persistence.
+- Authentication and authorization.
+- Background job queues.
+- Workflow engines such as n8n.
+- Custom Vercel deployment configuration.
+- Custom domain configuration.
+
+The UUID and graph state should be shaped so persistence can be added later, but Level 1 does not require a database.
+
+## Product flow
+
+```text
+Company tags
+    -> POST /api/resolve
+    -> Web search and candidate grouping
+    -> User selects ambiguous matches
+    -> POST /api/research
+    -> One LangGraph execution per company
+    -> Grounding validation
+    -> One report per company
+```
+
+The resolution step is an explicit human-in-the-loop product interaction. For Level 1, the browser holds the candidate selection between the two API requests. LangGraph's durable interrupt/checkpointer flow is deferred because it would add persistence infrastructure that the current scope does not require.
+
+## Technology choices
+
+### Application
+
+- Next.js App Router.
+- TypeScript.
+- Minimal CSS using project-owned design tokens.
+- Server-side Route Handlers for provider calls.
+
+### AI orchestration
+
+- `@langchain/langgraph` for the per-company graph.
+- `@langchain/core` for shared LangChain types and execution.
+- `@langchain/openai` for the LLM integration unless a provider decision changes before implementation.
+- LangSmith tracing enabled through environment configuration.
+
+### Data and validation
+
+- Zod for runtime validation and inferred TypeScript types.
+- No database in Level 1.
+- No client-side provider calls.
+
+### External research tools
+
+- Tavily Search for company discovery and focused signal searches.
+- Firecrawl Scrape for selected first-party pages.
+- Small server-side `fetch` wrappers are preferred over adding provider SDKs that do not materially reduce code.
+
+## Planned repository structure
+
+```text
+IMPLEMENTATION_PLAN.md
+README.md
+sample-report.md
+.env.example
+
+app/
+  page.tsx
+  globals.css
+  api/
+    resolve/
+      route.ts
+    research/
+      route.ts
+
+components/
+  company-tag-input.tsx
+  company-resolution.tsx
+  research-workspace.tsx
+  company-report.tsx
+
+lib/
+  schemas.ts
+  tools.ts
+  prompts.ts
+  graph.ts
+```
+
+Files should be added only when they hold a distinct responsibility. Avoid creating generic `utils`, `services`, or abstraction layers without a concrete use.
+
+## Environment contract
+
+Create `.env.example` with the following server-side variables:
+
+```text
+OPENAI_API_KEY=
+OPENAI_MODEL=
+
+TAVILY_API_KEY=
+FIRECRAWL_API_KEY=
+
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+Local secrets belong in `.env.local`, which must not be committed.
+
+The browser must never receive any provider API key or raw provider authorization header.
+
+## Fixed data contracts
+
+`lib/schemas.ts` is the single source of truth for all runtime and TypeScript contracts.
+
+All objects should use strict Zod schemas. Node outputs must not contain arbitrary fields.
+
+### Source
+
+```ts
+const Source = z.object({
+  id: z.string(),
+  title: z.string(),
+  url: z.string().url(),
+  publisher: z.string(),
+  sourceType: z.enum([
+    "company",
+    "news",
+    "hiring",
+    "security",
+    "funding",
+    "linkedin",
+    "other"
+  ]),
+  publishedAt: z.string().nullable()
+}).strict();
+```
+
+### Evidence
+
+```ts
+const Evidence = z.object({
+  id: z.string(),
+  sourceId: z.string(),
+  excerpt: z.string(),
+  collectedAt: z.string()
+}).strict();
+```
+
+Evidence excerpts must come from search or scraping output. The LLM may select evidence IDs but must not author evidence excerpts.
+
+### Grounded claim
+
+```ts
+const GroundedClaim = z.object({
+  text: z.string(),
+  evidenceIds: z.array(z.string()).min(1),
+  confidence: z.enum(["high", "medium", "low"])
+}).strict();
+```
+
+Every report claim uses this structure or a more specific object containing the same required `evidenceIds` relationship.
+
+### Company resolution
+
+```ts
+const CompanyCandidate = z.object({
+  id: z.string(),
+  name: z.string(),
+  domain: z.string().nullable(),
+  websiteUrl: z.string().url().nullable(),
+  description: z.string(),
+  sourceIds: z.array(z.string())
+}).strict();
+
+const CompanyResolution = z.object({
+  researchId: z.string().uuid(),
+  inputName: z.string(),
+  status: z.enum(["unique", "ambiguous", "not_found"]),
+  candidates: z.array(CompanyCandidate),
+  sources: z.array(Source),
+  gaps: z.array(z.string())
+}).strict();
+
+const ResolvedCompany = z.object({
+  inputName: z.string(),
+  name: z.string(),
+  domain: z.string(),
+  websiteUrl: z.string().url(),
+  description: z.string()
+}).strict();
+```
+
+### Research node outputs
+
+#### First-party context
+
+```ts
+const FirstPartyContext = z.object({
+  whatTheyDo: GroundedClaim,
+  products: z.array(GroundedClaim),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string())
+}).strict();
+```
+
+#### Recent signals
+
+```ts
+const RecentSignal = z.object({
+  category: z.enum(["news", "funding", "product", "leadership"]),
+  claim: GroundedClaim
+}).strict();
+
+const RecentSignals = z.object({
+  signals: z.array(RecentSignal),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string())
+}).strict();
+```
+
+#### Hiring signals
+
+```ts
+const HiringSignal = z.object({
+  roleTitle: z.string(),
+  team: z.string().nullable(),
+  location: z.string().nullable(),
+  postedAt: z.string().nullable(),
+  claim: GroundedClaim
+}).strict();
+
+const HiringSignals = z.object({
+  signals: z.array(HiringSignal),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string())
+}).strict();
+```
+
+#### Security signals
+
+```ts
+const SecuritySignal = z.object({
+  category: z.enum([
+    "security_team",
+    "security_product",
+    "compliance",
+    "infrastructure",
+    "incident",
+    "automation"
+  ]),
+  claim: GroundedClaim,
+  whyItMatters: GroundedClaim
+}).strict();
+
+const SecuritySignals = z.object({
+  signals: z.array(SecuritySignal),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string())
+}).strict();
+```
+
+### Final report
+
+```ts
+const PainPoint = z.object({
+  painPoint: z.string(),
+  rationale: GroundedClaim
+}).strict();
+
+const TalkingPoint = z.object({
+  point: z.string(),
+  rationale: GroundedClaim
+}).strict();
+
+const CompanyReport = z.object({
+  researchId: z.string().uuid(),
+  company: ResolvedCompany,
+  whatTheyDo: GroundedClaim,
+  recentSignals: z.array(RecentSignal),
+  hiringSignals: z.array(HiringSignal),
+  securitySignals: z.array(SecuritySignal),
+  likelyPainPoints: z.array(PainPoint),
+  talkingPoints: z.array(TalkingPoint),
+  confidenceAndGaps: z.array(z.string()).min(1),
+  sources: z.array(Source),
+  evidence: z.array(Evidence)
+}).strict();
+```
+
+`hiringSignals` and `securitySignals` are retained in the final report so the
+required report UI can render those graph outputs without discarding evidence.
+
+## API contracts
+
+### `POST /api/resolve`
+
+Request:
+
+```ts
+{
+  companies: string[]
+}
+```
+
+Behavior:
+
+- Validate one to five names.
+- Trim and deduplicate names.
+- Generate one `researchId` per submitted company.
+- Run company discovery search for each name.
+- Return `CompanyResolution[]`.
+
+Response:
+
+```ts
+{
+  resolutions: CompanyResolution[]
+}
+```
+
+### `POST /api/research`
+
+Request:
+
+```ts
+{
+  companies: Array<{
+    researchId: string;
+    company: ResolvedCompany;
+  }>
+}
+```
+
+Behavior:
+
+- Validate selected companies and UUIDs.
+- Run one graph invocation per company.
+- Use `Promise.allSettled` so partial success is preserved.
+- Return successful reports and company-specific failures.
+
+Response:
+
+```ts
+{
+  reports: CompanyReport[];
+  failures: Array<{
+    researchId: string;
+    companyName: string;
+    message: string;
+  }>
+}
+```
+
+## LangGraph design
+
+Compile one graph definition and invoke it independently for each company.
+
+```text
+Selected company
+    -> firstPartyContext
+    -> recentSignals
+    -> hiringSignals
+    -> securitySignals
+    -> synthesizeReport
+    -> validateReport
+    -> final report
+```
+
+The research nodes should be parallelizable because they are independent evidence-gathering tasks. The synthesis node must wait for all available research outputs.
+
+### Node responsibilities
+
+#### `firstPartyContext`
+
+- Tool: Firecrawl scrape.
+- Target: selected official website and, when available, relevant product or careers page.
+- Extract plain-language company description and products.
+- Preserve source and evidence lineage.
+
+#### `recentSignals`
+
+- Tool: Tavily Search.
+- Dedicated search patterns for recent news, funding, leadership, and product activity.
+- Extract only evidence-backed signals.
+
+#### `hiringSignals`
+
+- Tool: Tavily Search.
+- Dedicated patterns such as:
+
+```text
+"{company}" careers security engineer
+"{company}" hiring SOC cloud security incident response
+"{company}" engineering hiring security team
+```
+
+- Distinguish actual open roles from generic careers pages.
+- Treat missing dates as unknown rather than inventing them.
+
+#### `securitySignals`
+
+- Tool: Tavily Search.
+- Dedicated patterns such as:
+
+```text
+"{company}" security operations SOC incident response
+"{company}" cybersecurity cloud security compliance
+"{company}" SIEM SOAR security automation
+"{company}" breach vulnerability security incident
+```
+
+- Separate explicit security evidence from inferred operational complexity.
+
+#### `synthesizeReport`
+
+- Tool: LLM.
+- Input: typed outputs from all research nodes, sources, and evidence.
+- Output: `CompanyReport` candidate.
+- Must reference existing evidence IDs.
+- Must include useful gaps when evidence is weak or missing.
+
+#### `validateReport`
+
+- No LLM.
+- Validate the final Zod schema.
+- Confirm every evidence ID exists.
+- Confirm every evidence record references a source.
+- Confirm every source URL is valid.
+- Reject unsupported claims.
+
+## Grounding rules
+
+These rules must be enforced in code and prompts:
+
+1. Search and scraping code creates `Source` and `Evidence` records.
+2. LLM prompts receive only bounded evidence records.
+3. LLM outputs reference existing `evidenceIds`.
+4. The LLM cannot create URLs or source records.
+5. Every final claim requires at least one evidence ID.
+6. Pain points and talking points are explicitly treated as evidence-backed inferences.
+7. If there is not enough evidence, the output contains a gap instead of a claim.
+8. The final report includes the complete source list needed by the UI.
+
+## UUID and LangSmith tracing
+
+Generate each `researchId` with `crypto.randomUUID()`.
+
+The same ID is used in:
+
+- Company resolution state.
+- Selected company payload.
+- LangGraph state.
+- LangGraph `thread_id`.
+- LangSmith metadata.
+- LangSmith tags.
+- Final report.
+- Future persistence records.
+
+Each company must be invoked independently:
+
+```ts
+await Promise.allSettled(
+  companies.map(({ researchId, company }) =>
+    runCompanyResearch(researchId, company)
+  )
+);
+```
+
+Each invocation receives metadata similar to:
+
+```ts
+{
+  configurable: {
+    thread_id: researchId
+  },
+  metadata: {
+    researchId,
+    companyName: company.name,
+    domain: company.domain
+  },
+  tags: [
+    "customer-intelligence",
+    `research:${researchId}`
+  ]
+}
+```
+
+Five submitted companies must produce five reports, five research IDs, and five independently searchable LangSmith traces.
+
+The batch route must not wrap all companies in one graph execution.
+
+## UI implementation
+
+### Research workspace
+
+The main screen should contain:
+
+- Short product title.
+- Tag input.
+- One primary action.
+- Resolution state when needed.
+- Reports after research completes.
+
+Avoid sidebars, dashboard metrics, extra navigation, and unnecessary headlines.
+
+### Resolution state
+
+For each input company, show:
+
+- Ready.
+- Choose a company.
+- No confident match found.
+
+Ambiguous candidates should appear as compact selectable cards with name, domain, description, and source link.
+
+### Report state
+
+Each report should show:
+
+1. Company identity.
+2. What they do.
+3. Recent signals.
+4. Hiring signals.
+5. Security signals.
+6. Likely Torq-relevant pain points.
+7. Suggested talking points.
+8. Confidence and gaps.
+9. Compact sources section.
+
+Claims should show small inline source badges such as `[S1]` and `[S2]`. The source list should contain clickable titles or publisher labels that open the actual URL in a new tab.
+
+### Required states
+
+- Empty input.
+- Invalid input.
+- Research in progress.
+- Unique company resolution.
+- Ambiguous company resolution.
+- No confident match.
+- Successful report.
+- Partial batch success.
+- No meaningful public footprint.
+- Search failure.
+- Scrape failure.
+- LLM failure.
+- Grounding validation failure.
+
+Progress indicators must be honest. Do not display fake node progress unless the API actually streams node updates.
+
+## Torq-inspired styling
+
+Define visual tokens in `app/globals.css`:
+
+```css
+--background: #07090d;
+--surface: #10131a;
+--border: #252a35;
+--text-primary: #f5f7fb;
+--text-muted: #98a1b3;
+--accent: electric-blue-or-violet;
+--warning: amber;
+--success: green;
+```
+
+Style direction:
+
+- Dark-first interface.
+- High contrast text.
+- Restrained accent usage.
+- Compact cards.
+- Thin borders.
+- Clear status treatments.
+- Evidence and uncertainty visibly separated from assertions.
+
+Use a system-safe sans font stack unless an approved Torq font asset becomes available.
+
+## Local verification plan
+
+### Single-company smoke test
+
+- Enter one known company.
+- Confirm one resolution result.
+- Generate one report.
+- Confirm one UUID.
+- Confirm one LangSmith trace.
+- Open every source link.
+- Verify report claims have evidence badges.
+
+### Ambiguous-company test
+
+- Enter a deliberately ambiguous name.
+- Confirm multiple candidates appear.
+- Select one candidate.
+- Confirm only the selected company reaches the research graph.
+
+### Five-company test
+
+- Enter five tags.
+- Confirm five independent graph executions.
+- Confirm five reports.
+- Confirm five UUIDs.
+- Confirm five LangSmith traces.
+- Confirm one failure does not remove successful reports.
+
+### Weak-data test
+
+- Use a company with a small public footprint.
+- Confirm gaps are shown.
+- Confirm the report does not fabricate confidence.
+
+### Provider-failure test
+
+- Test invalid or missing provider credentials.
+- Confirm a clear failure state.
+- Confirm no secret is visible in the browser.
+
+## Testing strategy
+
+Add tests only around behavior that protects the contracts:
+
+- Tag parsing, trimming, deduplication, and maximum count.
+- Zod contract acceptance and rejection.
+- Grounding validation.
+- Source/evidence ID integrity.
+- Company-resolution status handling.
+- Partial batch failure handling.
+- One-company/one-research-ID execution.
+
+Provider calls should be mocked for deterministic contract tests. At least one live local smoke test must use the real Tavily, Firecrawl, LLM, and LangSmith integrations.
+
+## Documentation and submission artifacts
+
+Create `README.md` with:
+
+- Product overview.
+- Local prerequisites.
+- Install and run commands.
+- Environment variable setup.
+- Architecture summary.
+- Node responsibilities.
+- Grounding model.
+- LangSmith tracing instructions.
+- Known limitations.
+
+Create `sample-report.md` from a real local run. It must contain actual source links and reflect the product's rendered report structure.
+
+## Completion criteria for the local milestone
+
+The local milestone is complete when:
+
+- The app runs from a clean checkout with documented commands.
+- A non-technical user can complete the full flow without instructions.
+- One to five companies can be entered as tags.
+- Ambiguous names require explicit user selection.
+- Every report claim is evidence-backed.
+- Every report contains clickable source links.
+- Five companies produce five reports, five UUIDs, and five traces.
+- Partial failures are handled without losing successful results.
+- Confidence and gaps are visible.
+- No secrets reach the client.
+- The README and sample report are complete.
+
+## Deployment decision gate
+
+After the local milestone passes, decide whether deployment adds value for the presentation.
+
+If deployment is approved later, evaluate:
+
+- Vercel environment variables.
+- Serverless function execution duration.
+- Tavily and Firecrawl rate limits.
+- LangSmith trace completion in a serverless runtime.
+- Whether Level 1's stateless behavior is sufficient for the deployed demo.
+- Custom domain configuration only after the deployment itself is verified.
+
+No deployment work should begin until the local acceptance criteria above are met.
