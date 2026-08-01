@@ -28,7 +28,9 @@ describe("research progress", () => {
     );
 
     expect(html).toContain('aria-valuenow="17"');
-    expect(html).toContain("Recent-signal research completed.");
+    expect(html).toContain("Recent signals");
     expect(html).toContain("stage-completed");
+    expect(html).not.toContain("Run log");
+    expect(html).not.toContain("120ms");
   });
 });

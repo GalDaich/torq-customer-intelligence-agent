@@ -123,7 +123,6 @@ export async function resolveCompanyName(
     sourceType: "other",
     maxResults: 6,
     ...(inputDomain ? { includeDomains: [inputDomain] } : {}),
-    logContext: { researchId, companyName: inputName },
   });
   const discovered = candidatesFromCorpus(inputName, researchId, corpus);
   const plausible = inputDomain

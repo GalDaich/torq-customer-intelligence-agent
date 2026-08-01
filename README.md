@@ -15,7 +15,7 @@ The implementation is complete through deterministic tests, production build, br
 7. Uses an LLM to classify evidence and passes only node-selected lineage into final synthesis.
 8. Deterministically rejects unsupported, uncited, generic, and duplicate evidence, including the same job repeated across sources.
 9. Returns successful company reports even when another company fails.
-10. Streams real graph-stage progress to the browser and records a timestamped run log.
+10. Streams real graph-stage progress to the browser without retaining or displaying a run log.
 11. Presents completed reports as a company launchpad and opens each full report in its own company-named browser tab with a single-open category stack.
 
 ## Local prerequisites
@@ -79,17 +79,15 @@ Every LLM instruction lives in its own editable TypeScript module under `prompts
 
 Before selection or automatic continuation, discovery candidates pass through one strict structured-output identity-normalization call. The model can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities. This pre-graph call has its own `normalize_company_identity` LangSmith run, normalization tags, and the same `research:<researchId>` correlation tag used by the later graph.
 
-For every company, `researchId` is preserved through resolution, selection, graph state, progress events, backend logs, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
+For every company, `researchId` is preserved through resolution, selection, graph state, progress events, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
 
-The research route responds as newline-delimited JSON. Each LangGraph task start, completion, or failure is streamed as a typed progress event before the final batch result. The progress bar and browser activity log are derived only from those server events; they do not use estimated timers.
+The research route responds as newline-delimited JSON. Each LangGraph task start, completion, or failure is streamed as a typed progress event before the final batch result. The progress bar is derived only from those server events; it does not use estimated timers.
 
 ## Observability
 
-- The progress panel shows the current graph stage, per-company stage state, percentage complete, timestamps, and measured stage duration.
-- Server routes, provider calls, graph stages, and batch boundaries emit one structured JSON log line per event.
-- `batchId`, `researchId`, company name, stage, provider operation, status, and duration provide correlation across the browser log, terminal output, and LangSmith.
-- Logs intentionally exclude API keys, provider payloads, evidence excerpts, prompts, and report content.
-- LangSmith remains the detailed trace system for graph and model execution. Local JSON logs explain application and provider boundaries around those traces.
+- The progress panel shows the current graph stage, per-company stage state, and percentage complete while research is running.
+- The app does not render a browser run log or emit its own structured backend, provider, or model logs.
+- LangSmith remains the detailed trace system for identity normalization, graph execution, and model calls.
 
 ## Grounding model
 
@@ -140,7 +138,7 @@ Only after this live run passes should `sample-report.md` be replaced with the a
 - Human resolution state is held in the browser and is lost on refresh.
 - The fixed `/products` first-party path will not exist for every company; that miss appears as a gap.
 - Research uses one long-lived HTTP request per batch and streams newline-delimited progress events while it runs.
-- Browser activity history is held only for the current flow, and backend JSON logs go only to the current server log destination; persistence and centralized log aggregation are deferred.
+- The progress stream is transient UI state and is not retained as activity history.
 - Provider rate limits and latency affect one-to-five company batches.
 - `sample-report.md` is pending a real credential-backed run.
 - A fresh npm advisory audit was blocked in this environment. The install reported three high-severity findings in the full dependency tree; re-run `npm audit` in an approved environment and review findings before deployment.

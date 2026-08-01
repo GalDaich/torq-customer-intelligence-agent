@@ -1,7 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { companyIdentityNormalizationMessages } from "../prompts/company-identity-normalization";
-import { logBackend } from "./logger";
 import type { CompanyCandidate } from "./schemas";
 import { ProtectedBoundaryError, requireServerEnv } from "./tools";
 
@@ -87,18 +86,6 @@ export async function normalizeCompanyCandidates(
   if (candidates.length === 0) return [];
 
   const operation = "normalize_company_identity";
-  const startedAt = Date.now();
-  logBackend({
-    level: "info",
-    event: "model_request_started",
-    message: "OpenAI company identity normalization started.",
-    provider: "OpenAI",
-    operation,
-    stage: "provider",
-    status: "started",
-    researchId: context.researchId,
-    companyName: input,
-  });
 
   try {
     const normalizer = new ChatOpenAI({
@@ -114,34 +101,8 @@ export async function normalizeCompanyCandidates(
       companyIdentityNormalizationMessages(input, candidates),
       companyNormalizationTraceConfig(input, context, candidates.length),
     );
-    const normalized = applyCandidateNormalizations(candidates, output);
-    logBackend({
-      level: "info",
-      event: "model_request_completed",
-      message: "OpenAI company identity normalization completed.",
-      provider: "OpenAI",
-      operation,
-      stage: "provider",
-      status: "completed",
-      durationMs: Date.now() - startedAt,
-      researchId: context.researchId,
-      companyName: input,
-      candidateCount: normalized.length,
-    });
-    return normalized;
+    return applyCandidateNormalizations(candidates, output);
   } catch (error) {
-    logBackend({
-      level: "error",
-      event: "model_request_failed",
-      message: "OpenAI company identity normalization failed.",
-      provider: "OpenAI",
-      operation,
-      stage: "provider",
-      status: "failed",
-      durationMs: Date.now() - startedAt,
-      researchId: context.researchId,
-      companyName: input,
-    });
     if (error instanceof ProtectedBoundaryError) throw error;
     throw new ProtectedBoundaryError(
       "Company identity normalization failed; unnormalized search text was not used.",

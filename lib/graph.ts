@@ -17,7 +17,6 @@ import {
   retainStrongHiringEvidence,
 } from "./evidence-quality";
 import { retainCitedLineage, validateGroundedReport } from "./grounding";
-import { logBackend } from "./logger";
 import {
   CompanyReportSchema,
   EvidenceSchema,
@@ -175,57 +174,7 @@ function model() {
   });
 }
 
-async function invokeStructuredModel<T>(
-  operation: string,
-  researchId: string,
-  companyName: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  const startedAt = Date.now();
-  logBackend({
-    level: "info",
-    event: "model_request_started",
-    message: `OpenAI ${operation} request started.`,
-    provider: "OpenAI",
-    operation,
-    stage: "provider",
-    status: "started",
-    researchId,
-    companyName,
-  });
-  try {
-    const result = await run();
-    logBackend({
-      level: "info",
-      event: "model_request_completed",
-      message: `OpenAI ${operation} request completed.`,
-      provider: "OpenAI",
-      operation,
-      stage: "provider",
-      status: "completed",
-      durationMs: Date.now() - startedAt,
-      researchId,
-      companyName,
-    });
-    return result;
-  } catch (error) {
-    logBackend({
-      level: "error",
-      event: "model_request_failed",
-      message: `OpenAI ${operation} request failed.`,
-      provider: "OpenAI",
-      operation,
-      stage: "provider",
-      status: "failed",
-      durationMs: Date.now() - startedAt,
-      researchId,
-      companyName,
-    });
-    throw error;
-  }
-}
-
-async function scrapeFirstParty(company: ResolvedCompany, researchId: string): Promise<{
+async function scrapeFirstParty(company: ResolvedCompany): Promise<{
   corpus: ResearchCorpus;
   gaps: string[];
 }> {
@@ -240,7 +189,6 @@ async function scrapeFirstParty(company: ResolvedCompany, researchId: string): P
         url: target.url,
         idPrefix: `FP${index + 1}`,
         sourceType: target.sourceType,
-        logContext: { researchId, companyName: company.name },
       }),
     ),
   );
@@ -269,8 +217,6 @@ async function searchPatterns(
   prefix: string,
   sourceType: "news" | "hiring" | "security",
   topic: "general" | "news" = "general",
-  researchId?: string,
-  companyName?: string,
 ): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
   const settled = await Promise.allSettled(
     patterns.map((query, index) =>
@@ -281,7 +227,6 @@ async function searchPatterns(
         maxResults: 4,
         topic,
         ...(topic === "news" ? { days: 365 } : {}),
-        logContext: { researchId, companyName },
       }),
     ),
   );
@@ -303,7 +248,7 @@ async function searchPatterns(
 }
 
 const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => {
-  const { corpus, gaps } = await scrapeFirstParty(state.company, state.researchId);
+  const { corpus, gaps } = await scrapeFirstParty(state.company);
   if (corpus.evidence.length === 0) {
     return { firstPartyCorpus: corpus, firstPartyGaps: gaps };
   }
@@ -313,11 +258,8 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
       name: "extract_first_party_context",
       strict: true,
     });
-    const firstPartyContext = await invokeStructuredModel(
-      "extract_first_party_context",
-      state.researchId,
-      state.company.name,
-      () => extraction.invoke(firstPartyMessages(state.company, corpus)),
+    const firstPartyContext = await extraction.invoke(
+      firstPartyMessages(state.company, corpus),
     );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
@@ -347,8 +289,6 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     "REC",
     "news",
     "news",
-    state.researchId,
-    company.name,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -362,12 +302,7 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_recent_signals",
       strict: true,
     });
-    const recentSignals = await invokeStructuredModel(
-      "extract_recent_signals",
-      state.researchId,
-      company.name,
-      () => extraction.invoke(recentSignalMessages(company, corpus)),
-    );
+    const recentSignals = await extraction.invoke(recentSignalMessages(company, corpus));
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
       recentSignals.signals.map((signal) => signal.claim),
@@ -399,8 +334,6 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     "HIR",
     "hiring",
     "general",
-    state.researchId,
-    company.name,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -414,12 +347,7 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_hiring_signals",
       strict: true,
     });
-    const hiringSignals = await invokeStructuredModel(
-      "extract_hiring_signals",
-      state.researchId,
-      company.name,
-      () => extraction.invoke(hiringSignalMessages(company, corpus)),
-    );
+    const hiringSignals = await extraction.invoke(hiringSignalMessages(company, corpus));
     const selectedCorpus = retainStrongHiringEvidence(corpus, hiringSignals.signals);
     return {
       hiringCorpus: selectedCorpus,
@@ -448,8 +376,6 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     "SEC",
     "security",
     "general",
-    state.researchId,
-    company.name,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -463,12 +389,7 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_security_signals",
       strict: true,
     });
-    const securitySignals = await invokeStructuredModel(
-      "extract_security_signals",
-      state.researchId,
-      company.name,
-      () => extraction.invoke(securitySignalMessages(company, corpus)),
-    );
+    const securitySignals = await extraction.invoke(securitySignalMessages(company, corpus));
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
       securitySignals.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
@@ -530,23 +451,18 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
   });
   let content: z.infer<typeof ReportContentSchema>;
   try {
-    content = await invokeStructuredModel(
-      "synthesize_customer_intelligence_report",
-      state.researchId,
-      state.company.name,
-      () => synthesizer.invoke(
-        synthesisMessages({
-          company: state.company,
-          corpus,
-          classified: {
-            firstPartyContext: state.firstPartyResult,
-            recentSignals,
-            hiringSignals,
-            securitySignals,
-          },
-          nodeGaps,
-        }),
-      ),
+    content = await synthesizer.invoke(
+      synthesisMessages({
+        company: state.company,
+        corpus,
+        classified: {
+          firstPartyContext: state.firstPartyResult,
+          recentSignals,
+          hiringSignals,
+          securitySignals,
+        },
+        nodeGaps,
+      }),
     );
   } catch {
     throw new ProtectedBoundaryError("LLM synthesis failed; no report was produced.");

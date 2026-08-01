@@ -10,8 +10,8 @@ Completed locally:
 - Four parallel research nodes, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, graph trace tags, and pre-graph identity-normalization tracing.
 - Tavily-backed name/domain resolution, strict LLM identity normalization, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
-- LangGraph task-event streaming with an event-driven progress bar and browser activity log.
-- Correlated structured JSON logs across resolution, batch, graph-stage, and provider boundaries.
+- LangGraph task-event streaming with an event-driven progress bar and no browser activity log.
+- LangSmith tracing for pre-graph identity normalization, graph execution, and LLM calls; no application-owned structured logging.
 - Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, single-open report accordions, source badges, and visible gaps.
 - Dedicated root `prompts/` modules for every LLM operation; no runtime prompt remains inline with orchestration code.
 - Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
@@ -161,7 +161,6 @@ lib/
   company-normalization.ts
   evidence-quality.ts
   schemas.ts
-  logger.ts
   research-stream.ts
   tools.ts
   graph.ts
@@ -677,12 +676,9 @@ The implemented progress view uses LangGraph's task stream as its only source of
 
 ## Observability contract
 
-- The browser activity log is built from the same typed progress events as the progress bar.
-- Server logs are single-line JSON records for resolution, batch, company, graph-stage, and provider-call boundaries.
-- `batchId` and `researchId` correlate concurrent work without combining independent graph traces.
-- Durations are measured at stage and provider boundaries.
-- Logs must not include secrets, authorization headers, raw provider payloads, evidence excerpts, prompts, or generated report content.
-- Browser logs and server logs are ephemeral in Level 1. Persistent or centralized logging remains deferred.
+- The browser shows transient progress state but no activity or run log.
+- The application does not emit custom backend, provider, or model log records.
+- `batchId` and `researchId` correlate concurrent progress events without combining independent graph traces.
 - LangSmith is the detailed graph/model trace destination and uses the same per-company `researchId`.
 - Pre-graph identity normalization is a separate named LangSmith model run because canonical identity is required before the research graph can start.
 
@@ -768,7 +764,7 @@ Add tests only around behavior that protects the contracts:
 - Partial batch failure handling.
 - One-company/one-research-ID execution.
 - Fragmented newline-delimited progress stream parsing.
-- Event-driven progress rendering and structured log shape.
+- Event-driven progress rendering without activity-log output.
 
 Provider calls should be mocked for deterministic contract tests. At least one live local smoke test must use the real Tavily, Firecrawl, LLM, and LangSmith integrations.
 

@@ -4,7 +4,6 @@ import {
   runCompanyResearch,
   type ResearchProgressUpdate,
 } from "@/lib/graph";
-import { logBackend } from "@/lib/logger";
 import {
   ResearchCompleteEventSchema,
   ResearchProgressEventSchema,
@@ -70,31 +69,9 @@ export function createResearchStream(
       };
 
       void (async () => {
-        const batchStartedAt = Date.now();
-        logBackend({
-          level: "info",
-          event: "research_batch_started",
-          message: "Research batch started.",
-          batchId,
-          stage: "batch",
-          status: "started",
-          totalCompanies: companies.length,
-        });
-
         try {
           const outcomes = await Promise.all(
             companies.map(async ({ researchId, company }) => {
-              const companyStartedAt = Date.now();
-              logBackend({
-                level: "info",
-                event: "company_research_started",
-                message: "Company research started.",
-                batchId,
-                researchId,
-                companyName: company.name,
-                status: "started",
-              });
-
               try {
                 const report = await runner(researchId, company, async (update) => {
                   if (update.status === "completed" || update.status === "failed") {
@@ -112,27 +89,6 @@ export function createResearchStream(
                     totalSteps,
                   });
                   emit(event);
-                  logBackend({
-                    level: update.status === "failed" ? "error" : "info",
-                    event: `research_stage_${update.status}`,
-                    message: update.message,
-                    batchId,
-                    researchId,
-                    companyName: company.name,
-                    stage: update.stage,
-                    status: update.status,
-                    ...(update.durationMs === null ? {} : { durationMs: update.durationMs }),
-                  });
-                });
-                logBackend({
-                  level: "info",
-                  event: "company_research_completed",
-                  message: "Company research completed with a validated report.",
-                  batchId,
-                  researchId,
-                  companyName: company.name,
-                  status: "completed",
-                  durationMs: Date.now() - companyStartedAt,
                 });
                 return { report } as const;
               } catch (error) {
@@ -141,16 +97,6 @@ export function createResearchStream(
                   companyName: company.name,
                   message: publicErrorMessage(error),
                 };
-                logBackend({
-                  level: "error",
-                  event: "company_research_failed",
-                  message: failure.message,
-                  batchId,
-                  researchId,
-                  companyName: company.name,
-                  status: "failed",
-                  durationMs: Date.now() - companyStartedAt,
-                });
                 return { failure } as const;
               }
             }),
@@ -170,16 +116,6 @@ export function createResearchStream(
               response,
             }),
           );
-          logBackend({
-            level: response.failures.length > 0 ? "warn" : "info",
-            event: "research_batch_completed",
-            message: `Research batch completed with ${response.reports.length} reports and ${response.failures.length} failures.`,
-            batchId,
-            stage: "batch",
-            status: "completed",
-            totalCompanies: companies.length,
-            durationMs: Date.now() - batchStartedAt,
-          });
         } catch (error) {
           const message = publicErrorMessage(error);
           emit(
@@ -191,16 +127,6 @@ export function createResearchStream(
               message,
             }),
           );
-          logBackend({
-            level: "error",
-            event: "research_batch_failed",
-            message,
-            batchId,
-            stage: "batch",
-            status: "failed",
-            totalCompanies: companies.length,
-            durationMs: Date.now() - batchStartedAt,
-          });
         } finally {
           controller.close();
         }

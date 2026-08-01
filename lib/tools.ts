@@ -4,7 +4,6 @@ import {
   evidenceFingerprint,
   isGenericEvidenceSource,
 } from "./evidence-quality";
-import { logBackend } from "./logger";
 import {
   EvidenceSchema,
   SourceSchema,
@@ -52,11 +51,6 @@ const FirecrawlResponseSchema = z
 export type ResearchCorpus = {
   sources: Source[];
   evidence: Evidence[];
-};
-
-type ProviderLogContext = {
-  researchId?: string;
-  companyName?: string;
 };
 
 export class ProviderError extends Error {
@@ -108,53 +102,6 @@ function assertLangSmithEnvironment(): void {
   }
 }
 
-async function loggedProviderCall<T>(
-  provider: "Tavily" | "Firecrawl",
-  operation: string,
-  context: ProviderLogContext | undefined,
-  run: () => Promise<T>,
-): Promise<T> {
-  const startedAt = Date.now();
-  logBackend({
-    level: "info",
-    event: "provider_request_started",
-    message: `${provider} ${operation} request started.`,
-    provider,
-    operation,
-    stage: "provider",
-    status: "started",
-    ...context,
-  });
-  try {
-    const result = await run();
-    logBackend({
-      level: "info",
-      event: "provider_request_completed",
-      message: `${provider} ${operation} request completed.`,
-      provider,
-      operation,
-      stage: "provider",
-      status: "completed",
-      durationMs: Date.now() - startedAt,
-      ...context,
-    });
-    return result;
-  } catch (error) {
-    logBackend({
-      level: "error",
-      event: "provider_request_failed",
-      message: error instanceof ProviderError ? error.message : `${provider} ${operation} request failed.`,
-      provider,
-      operation,
-      stage: "provider",
-      status: "failed",
-      durationMs: Date.now() - startedAt,
-      ...context,
-    });
-    throw error;
-  }
-}
-
 function publisherFor(url: string): string {
   return new URL(url).hostname.replace(/^www\./, "");
 }
@@ -196,13 +143,11 @@ export async function searchTavily(
     topic?: "general" | "news";
     days?: number;
     includeDomains?: string[];
-    logContext?: ProviderLogContext;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
-  return loggedProviderCall("Tavily", `search:${input.idPrefix}`, input.logContext, async () => {
-    const apiKey = options.apiKey ?? requireServerEnv("TAVILY_API_KEY");
-    const payload = await providerJson(
+  const apiKey = options.apiKey ?? requireServerEnv("TAVILY_API_KEY");
+  const payload = await providerJson(
     "Tavily",
     "https://api.tavily.com/search",
     {
@@ -225,10 +170,10 @@ export async function searchTavily(
     options.fetchImpl ?? fetch,
   );
 
-    const parsed = TavilyResponseSchema.safeParse(payload);
-    if (!parsed.success) {
-      throw new ProviderError("Tavily", "Tavily returned an unexpected response shape.");
-    }
+  const parsed = TavilyResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new ProviderError("Tavily", "Tavily returned an unexpected response shape.");
+  }
 
   const collectedAt = new Date().toISOString();
   const sources: Source[] = [];
@@ -270,8 +215,7 @@ export async function searchTavily(
     }
   }
 
-    return { sources, evidence };
-  });
+  return { sources, evidence };
 }
 
 function markdownExcerpts(markdown: string): string[] {
@@ -289,13 +233,11 @@ export async function scrapeFirecrawl(
     url: string;
     idPrefix: string;
     sourceType: Source["sourceType"];
-    logContext?: ProviderLogContext;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
-  return loggedProviderCall("Firecrawl", `scrape:${input.idPrefix}`, input.logContext, async () => {
-    const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
-    const payload = await providerJson(
+  const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
+  const payload = await providerJson(
     "Firecrawl",
     "https://api.firecrawl.dev/v2/scrape",
     {
@@ -315,10 +257,10 @@ export async function scrapeFirecrawl(
     options.fetchImpl ?? fetch,
   );
 
-    const parsed = FirecrawlResponseSchema.safeParse(payload);
-    if (!parsed.success || !parsed.data.success || !parsed.data.data?.markdown) {
-      throw new ProviderError("Firecrawl", "Firecrawl did not return readable page content.");
-    }
+  const parsed = FirecrawlResponseSchema.safeParse(payload);
+  if (!parsed.success || !parsed.data.success || !parsed.data.data?.markdown) {
+    throw new ProviderError("Firecrawl", "Firecrawl did not return readable page content.");
+  }
 
   const metadata = parsed.data.data.metadata;
   const sourceUrl = metadata?.sourceURL ?? metadata?.url ?? input.url;
@@ -340,8 +282,7 @@ export async function scrapeFirecrawl(
     }),
   );
 
-    return { sources: [source], evidence };
-  });
+  return { sources: [source], evidence };
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {

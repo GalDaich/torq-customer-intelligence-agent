@@ -52,7 +52,7 @@ export function ResearchProgress({
     <section className="progress-panel" aria-live="polite" aria-labelledby="progress-title">
       <div className="progress-heading">
         <div>
-          <p className="eyebrow">Live run activity</p>
+          <p className="eyebrow">Research progress</p>
           <h2 id="progress-title">{heading}</h2>
         </div>
         <strong>{percentage}%</strong>
@@ -91,34 +91,6 @@ export function ResearchProgress({
             </ol>
           </div>
         ))}
-      </div>
-
-      <div className="activity-log">
-        <div className="activity-log-heading">
-          <strong>Run log</strong>
-          <span>{events.length} events</span>
-        </div>
-        {events.length === 0 ? (
-          <p>Waiting for the first server event…</p>
-        ) : (
-          <ol>
-            {events.map((event) => (
-              <li key={`${event.batchId}-${event.sequence}`}>
-                <time dateTime={event.timestamp}>
-                  {new Date(event.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </time>
-                <span className={`log-status log-${event.status}`} aria-hidden="true" />
-                <strong>{event.companyName}</strong>
-                <span>{event.message}</span>
-                {event.durationMs !== null && <code>{event.durationMs}ms</code>}
-              </li>
-            ))}
-          </ol>
-        )}
       </div>
     </section>
   );
