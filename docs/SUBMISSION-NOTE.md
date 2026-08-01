@@ -12,7 +12,7 @@ Tavily searches, Firecrawl extracts pages, and OpenAI classifies evidence and wr
 
 ## Verification
 
-The latest local acceptance run kept the strict HiBob identity-selection step and then produced a populated report with 5 company developments, 1 hiring signal, 6 security signals, 5 technology signals, 3 pain-point hypotheses, 3 talking points, 15 sources, and 22 evidence records. The deterministic suite passed 70 tests, and the production build completed successfully.
+The validated Datadog sample run completed the research graph and produced 6 recent signals, 7 hiring signals, 5 security signals, 7 technology signals, 3 pain-point hypotheses, 3 talking points, 26 sources, and 27 evidence records. Its checked-in report is rendered directly from successful LangSmith trace `019fbf2b-fb4d-77f4-9268-0aee368cb694`, with every visible claim resolving through evidence to a source. The deterministic suite passed 70 tests, and the production build completed successfully.
 
 ## What I would add with another week
 
