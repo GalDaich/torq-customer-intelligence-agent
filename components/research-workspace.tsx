@@ -3,16 +3,24 @@
 import { useMemo, useState } from "react";
 import {
   ResolveResponseSchema,
-  ResearchResponseSchema,
   type CompanyReport as CompanyReportData,
   type CompanyResolution,
+  type ResearchProgressEvent,
   type ResearchResponse,
+  type ResolvedCompany,
 } from "@/lib/schemas";
+import { readResearchStream } from "@/lib/research-stream";
 import { CompanyReport } from "./company-report";
 import { CompanyResolutionList } from "./company-resolution";
 import { CompanyTagInput } from "./company-tag-input";
+import { ResearchProgress } from "./research-progress";
 
 type Phase = "input" | "resolving" | "resolution" | "researching" | "results";
+
+type SelectedCompany = {
+  researchId: string;
+  company: ResolvedCompany;
+};
 
 async function postJson(url: string, body: unknown): Promise<unknown> {
   const response = await fetch(url, {
@@ -38,6 +46,8 @@ export function ResearchWorkspace() {
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [reports, setReports] = useState<CompanyReportData[]>([]);
   const [failures, setFailures] = useState<ResearchResponse["failures"]>([]);
+  const [progressEvents, setProgressEvents] = useState<ResearchProgressEvent[]>([]);
+  const [activeCompanies, setActiveCompanies] = useState<SelectedCompany[]>([]);
   const [error, setError] = useState("");
 
   const selectedCompanies = useMemo(
@@ -92,23 +102,50 @@ export function ResearchWorkspace() {
             : [],
         ),
       );
+      const automaticCompanies: SelectedCompany[] = payload.resolutions.flatMap((resolution) => {
+        const candidate = resolution.candidates.find(
+          (item) => item.id === automaticSelections[resolution.researchId],
+        );
+        if (!candidate?.domain || !candidate.websiteUrl) return [];
+        return [{
+          researchId: resolution.researchId,
+          company: {
+            inputName: resolution.inputName,
+            name: candidate.name,
+            domain: candidate.domain,
+            websiteUrl: candidate.websiteUrl,
+            description: candidate.description,
+          },
+        }];
+      });
       setResolutions(payload.resolutions);
       setSelections(automaticSelections);
-      setPhase("resolution");
+      const allUnique = payload.resolutions.every((resolution) => resolution.status === "unique");
+      if (allUnique && automaticCompanies.length === payload.resolutions.length) {
+        await startResearch(automaticCompanies);
+      } else {
+        setPhase("resolution");
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Company resolution failed.");
       setPhase("input");
     }
   }
 
-  async function researchCompanies() {
-    if (selectedCompanies.length === 0 || unresolvedAmbiguity) return;
+  async function startResearch(inputs: SelectedCompany[]) {
     setError("");
+    setProgressEvents([]);
+    setActiveCompanies(inputs);
     setPhase("researching");
     try {
-      const payload = ResearchResponseSchema.parse(
-        await postJson("/api/research", { companies: selectedCompanies }),
-      );
+      const response = await fetch("/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies: inputs }),
+      });
+      const payload = await readResearchStream(response, (event) => {
+        setProgressEvents((current) => [...current, event]);
+      });
       setReports(payload.reports);
       setFailures(payload.failures);
       setPhase("results");
@@ -118,12 +155,19 @@ export function ResearchWorkspace() {
     }
   }
 
+  async function researchCompanies() {
+    if (selectedCompanies.length === 0 || unresolvedAmbiguity) return;
+    await startResearch(selectedCompanies);
+  }
+
   function editCompanies() {
     setPhase("input");
     setResolutions([]);
     setSelections({});
     setReports([]);
     setFailures([]);
+    setProgressEvents([]);
+    setActiveCompanies([]);
     setError("");
   }
 
@@ -136,7 +180,6 @@ export function ResearchWorkspace() {
           TQ
         </div>
         <span>Customer intelligence</span>
-        <span className="level-chip">Level 1 · Live public research</span>
       </header>
 
       <section className="hero">
@@ -160,7 +203,6 @@ export function ResearchWorkspace() {
               Edit companies
             </button>
           )}
-          <p>Public sources only · Provider keys stay server-side</p>
         </div>
         {error && <p className="error-banner" role="alert">{error}</p>}
       </section>
@@ -195,17 +237,12 @@ export function ResearchWorkspace() {
         </>
       )}
 
-      {phase === "researching" && (
-        <section className="honest-progress" aria-live="polite">
-          <span className="spinner" aria-hidden="true" />
-          <div>
-            <h2>Research is in progress</h2>
-            <p>
-              {selectedCompanies.length} independent company {selectedCompanies.length === 1 ? "run" : "runs"}
-              {" "}are gathering and validating public evidence. Results appear when the request completes.
-            </p>
-          </div>
-        </section>
+      {(phase === "researching" || (phase === "results" && progressEvents.length > 0)) && (
+        <ResearchProgress
+          companies={activeCompanies}
+          events={progressEvents}
+          finished={phase === "results"}
+        />
       )}
 
       {phase === "results" && (

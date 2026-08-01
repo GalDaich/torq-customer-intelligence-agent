@@ -85,12 +85,12 @@ export function CompanyTagInput({ companies, onChange, disabled = false }: Props
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           onBlur={commitDraft}
-          placeholder={companies.length === 0 ? "Type a company and press Enter" : "Add another"}
+          placeholder={companies.length === 0 ? "Company name or domain" : "Add another"}
           autoComplete="off"
         />
       </div>
       <div className="input-support">
-        <span>{message || "Press Enter or comma to add. Paste a comma- or line-separated list."}</span>
+        <span>{message || "Enter a company name or domain. Press Enter or comma to add."}</span>
         <span>{companies.length}/5</span>
       </div>
     </div>

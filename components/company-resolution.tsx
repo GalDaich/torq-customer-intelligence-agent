@@ -16,7 +16,7 @@ export function CompanyResolutionList({ resolutions, selections, onSelect }: Pro
           <p className="eyebrow">Identity check</p>
           <h2 id="resolution-title">Confirm the right companies</h2>
         </div>
-        <p>Ambiguous matches require your selection before research begins.</p>
+        <p>Single matches continue automatically. Only ambiguous names require your selection.</p>
       </div>
 
       <div className="resolution-list">

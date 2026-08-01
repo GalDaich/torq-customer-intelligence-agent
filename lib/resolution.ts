@@ -33,6 +33,46 @@ function candidateName(title: string, fallback: string): string {
   return firstSegment || fallback;
 }
 
+function comparisonKey(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function domainFromInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) return null;
+
+  try {
+    const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    const host = parsed.hostname.replace(/^www\./, "").toLocaleLowerCase();
+    return host.includes(".") ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+function domainMatches(candidateDomain: string | null, inputDomain: string): boolean {
+  if (!candidateDomain) return false;
+  return (
+    candidateDomain === inputDomain ||
+    candidateDomain.endsWith(`.${inputDomain}`) ||
+    inputDomain.endsWith(`.${candidateDomain}`)
+  );
+}
+
+function nameMatches(candidate: CompanyCandidate, inputName: string): boolean {
+  const inputKey = comparisonKey(inputName);
+  const nameKey = comparisonKey(candidate.name);
+  const domainKey = comparisonKey(candidate.domain?.split(".")[0] ?? "");
+  if (!inputKey) return false;
+  return (
+    nameKey === inputKey ||
+    nameKey.startsWith(inputKey) ||
+    inputKey.startsWith(nameKey) ||
+    domainKey === inputKey ||
+    domainKey.startsWith(inputKey)
+  );
+}
+
 export function candidatesFromCorpus(
   inputName: string,
   researchId: string,
@@ -40,21 +80,25 @@ export function candidatesFromCorpus(
 ): CompanyCandidate[] {
   const evidenceBySource = new Map(corpus.evidence.map((item) => [item.sourceId, item.excerpt]));
   const grouped = new Map<string, CompanyCandidate>();
+  const inputDomain = domainFromInput(inputName);
 
   for (const source of corpus.sources) {
     const host = hostFor(source.url);
     if (!isCandidateHost(host)) continue;
-    const existing = grouped.get(host);
+    const groupedHost = inputDomain && domainMatches(host, inputDomain) ? inputDomain : host;
+    const existing = grouped.get(groupedHost);
     if (existing) {
       existing.sourceIds.push(source.id);
       continue;
     }
 
-    grouped.set(host, {
+    grouped.set(groupedHost, {
       id: `${researchId}:C${grouped.size + 1}`,
       name: candidateName(source.title, inputName),
-      domain: host,
-      websiteUrl: new URL(source.url).origin,
+      domain: groupedHost,
+      websiteUrl: inputDomain && groupedHost === inputDomain
+        ? `https://${inputDomain}`
+        : new URL(source.url).origin,
       description: evidenceBySource.get(source.id)?.slice(0, 260) ?? "No description was returned.",
       sourceIds: [source.id],
     });
@@ -68,13 +112,22 @@ export async function resolveCompanyName(
   search: typeof searchTavily = searchTavily,
 ): Promise<CompanyResolution> {
   const researchId = randomUUID();
+  const inputDomain = domainFromInput(inputName);
   const corpus = await search({
-    query: `"${inputName}" company official website about`,
+    query: inputDomain
+      ? `"${inputDomain}" official company website`
+      : `"${inputName}" company official website about`,
     idPrefix: "RES",
     sourceType: "other",
     maxResults: 6,
+    ...(inputDomain ? { includeDomains: [inputDomain] } : {}),
+    logContext: { researchId, companyName: inputName },
   });
-  const candidates = candidatesFromCorpus(inputName, researchId, corpus);
+  const discovered = candidatesFromCorpus(inputName, researchId, corpus);
+  const plausible = inputDomain
+    ? discovered.filter((candidate) => domainMatches(candidate.domain, inputDomain))
+    : discovered.filter((candidate) => nameMatches(candidate, inputName));
+  const candidates = plausible.length > 0 ? plausible : discovered;
   const status = candidates.length === 0 ? "not_found" : candidates.length === 1 ? "unique" : "ambiguous";
 
   return CompanyResolutionSchema.parse({
@@ -100,7 +153,7 @@ export function normalizeCompanyNames(names: string[]): string[] {
   }
 
   if (normalized.length === 0 || normalized.length > 5) {
-    throw new Error("Enter between one and five unique company names.");
+    throw new Error("Enter between one and five unique company names or domains.");
   }
   return normalized;
 }

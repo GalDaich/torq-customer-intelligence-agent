@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
-import type { CompanyReport, ResolvedCompany } from "@/lib/schemas";
-import { executeResearchBatch } from "./route";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ResearchStreamEventSchema,
+  type CompanyReport,
+  type ResolvedCompany,
+} from "@/lib/schemas";
+import { createResearchStream, executeResearchBatch } from "./route";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const companies = [
   {
@@ -76,5 +84,64 @@ describe("independent research execution", () => {
         message: "Research failed at a protected provider or validation boundary.",
       },
     ]);
+  });
+
+  it("streams real stage updates followed by the validated batch response", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const runner = vi.fn(
+      async (
+        researchId: string,
+        company: ResolvedCompany,
+        onProgress?: (update: {
+          stage: "recentSignals";
+          status: "started" | "completed";
+          message: string;
+          durationMs: number | null;
+        }) => void | Promise<void>,
+      ) => {
+        await onProgress?.({
+          stage: "recentSignals",
+          status: "started",
+          message: "Searching recent signals.",
+          durationMs: null,
+        });
+        await onProgress?.({
+          stage: "recentSignals",
+          status: "completed",
+          message: "Recent-signal research completed.",
+          durationMs: 42,
+        });
+        return reportFor(researchId, company);
+      },
+    );
+
+    const body = await new Response(createResearchStream([companies[0]], runner)).text();
+    const events = body
+      .trim()
+      .split("\n")
+      .map((line) => ResearchStreamEventSchema.parse(JSON.parse(line)));
+
+    expect(events.map((event) => event.type)).toEqual([
+      "progress",
+      "progress",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({
+      type: "progress",
+      stage: "recentSignals",
+      status: "started",
+      completedSteps: 0,
+      totalSteps: 6,
+    });
+    expect(events[1]).toMatchObject({
+      type: "progress",
+      status: "completed",
+      completedSteps: 1,
+      durationMs: 42,
+    });
+    expect(events[2]).toMatchObject({
+      type: "complete",
+      response: { failures: [] },
+    });
   });
 });

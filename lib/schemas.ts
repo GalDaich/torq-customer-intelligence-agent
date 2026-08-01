@@ -206,6 +206,58 @@ export const ResearchResponseSchema = z
   })
   .strict();
 
+export const ResearchStageSchema = z.enum([
+  "firstPartyContext",
+  "recentSignals",
+  "hiringSignals",
+  "securitySignals",
+  "synthesizeReport",
+  "validateReport",
+]);
+
+export const ResearchProgressEventSchema = z
+  .object({
+    type: z.literal("progress"),
+    timestamp: z.string().datetime(),
+    sequence: z.number().int().positive(),
+    batchId: z.string().uuid(),
+    researchId: z.string().uuid(),
+    companyName: z.string().min(1),
+    stage: ResearchStageSchema,
+    status: z.enum(["started", "completed", "failed"]),
+    message: z.string().min(1),
+    completedSteps: z.number().int().nonnegative(),
+    totalSteps: z.number().int().positive(),
+    durationMs: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+export const ResearchCompleteEventSchema = z
+  .object({
+    type: z.literal("complete"),
+    timestamp: z.string().datetime(),
+    sequence: z.number().int().positive(),
+    batchId: z.string().uuid(),
+    response: ResearchResponseSchema,
+  })
+  .strict();
+
+export const ResearchStreamErrorEventSchema = z
+  .object({
+    type: z.literal("error"),
+    timestamp: z.string().datetime(),
+    sequence: z.number().int().positive(),
+    batchId: z.string().uuid(),
+    message: z.string().min(1),
+  })
+  .strict();
+
+export const ResearchStreamEventSchema = z.discriminatedUnion("type", [
+  ResearchProgressEventSchema,
+  ResearchCompleteEventSchema,
+  ResearchStreamErrorEventSchema,
+]);
+
 export type Source = z.infer<typeof SourceSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type GroundedClaim = z.infer<typeof GroundedClaimSchema>;
@@ -221,3 +273,6 @@ export type SecuritySignal = z.infer<typeof SecuritySignalSchema>;
 export type SecuritySignals = z.infer<typeof SecuritySignalsSchema>;
 export type CompanyReport = z.infer<typeof CompanyReportSchema>;
 export type ResearchResponse = z.infer<typeof ResearchResponseSchema>;
+export type ResearchStage = z.infer<typeof ResearchStageSchema>;
+export type ResearchProgressEvent = z.infer<typeof ResearchProgressEventSchema>;
+export type ResearchStreamEvent = z.infer<typeof ResearchStreamEventSchema>;

@@ -9,7 +9,9 @@ Completed locally:
 - Tavily and Firecrawl normalization wrappers.
 - Four parallel research nodes, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, and trace tag propagation.
-- Tavily-backed resolution, explicit ambiguity selection, independent batch execution, and partial failures.
+- Tavily-backed name/domain resolution, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
+- LangGraph task-event streaming with an event-driven progress bar and browser activity log.
+- Correlated structured JSON logs across resolution, batch, graph-stage, and provider boundaries.
 - Torq-inspired responsive browser UI with source badges and visible gaps.
 - Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
 
@@ -29,9 +31,9 @@ Build a local-first Level 1 Customer Intelligence Agent for Torq's AI Solutions 
 
 The product must let a non-technical account executive or CSM:
 
-1. Enter one to five companies using removable tags.
-2. Resolve ambiguous company names through public web search.
-3. Select the correct company when multiple matches are found.
+1. Enter one to five company names or domains using removable tags.
+2. Continue automatically when public search produces one plausible identity or an exact domain match.
+3. Select the correct company only when multiple plausible matches are found.
 4. Run grounded company research.
 5. Read a concise, useful report with clickable supporting sources.
 
@@ -52,7 +54,7 @@ The first milestone is local execution and behavioral verification. Deployment t
 
 ### Included in Level 1
 
-- Tag-based company input.
+- Tag-based company name or domain input.
 - Maximum of five companies per research request.
 - Public web search for company identity resolution.
 - Human selection for ambiguous company matches.
@@ -90,9 +92,10 @@ The UUID and graph state should be shaped so persistence can be added later, but
 ```text
 Company tags
     -> POST /api/resolve
-    -> Web search and candidate grouping
-    -> User selects ambiguous matches
+    -> Exact-domain or plausible-name candidate grouping
+    -> Auto-continue for unique matches; user selects ambiguous matches
     -> POST /api/research
+    -> Stream actual LangGraph task events
     -> One LangGraph execution per company
     -> Grounding validation
     -> One report per company
@@ -148,11 +151,14 @@ app/
 components/
   company-tag-input.tsx
   company-resolution.tsx
+  research-progress.tsx
   research-workspace.tsx
   company-report.tsx
 
 lib/
   schemas.ts
+  logger.ts
+  research-stream.ts
   tools.ts
   prompts.ts
   graph.ts
@@ -173,7 +179,7 @@ FIRECRAWL_API_KEY=
 
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=
-LANGSMITH_PROJECT=
+LANGSMITH_PROJECT=torq-customer-intelligence-agent
 LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 ```
 
@@ -377,10 +383,12 @@ Request:
 
 Behavior:
 
-- Validate one to five names.
-- Trim and deduplicate names.
+- Validate one to five names or domains.
+- Trim and deduplicate inputs.
 - Generate one `researchId` per submitted company.
-- Run company discovery search for each name.
+- For a domain, constrain discovery to that domain and group root/subdomain results.
+- For a name, retain plausible normalized name/domain-stem matches.
+- Mark one plausible match as `unique`; mark multiple plausible matches as `ambiguous`.
 - Return `CompanyResolution[]`.
 
 Response:
@@ -408,19 +416,40 @@ Behavior:
 
 - Validate selected companies and UUIDs.
 - Run one graph invocation per company.
-- Use `Promise.allSettled` so partial success is preserved.
-- Return successful reports and company-specific failures.
+- Guard each concurrent company run so partial success is preserved.
+- Stream real task start, completion, and failure events as newline-delimited JSON.
+- Finish with successful reports and company-specific failures.
 
-Response:
+Stream events:
 
 ```ts
 {
-  reports: CompanyReport[];
-  failures: Array<{
-    researchId: string;
-    companyName: string;
-    message: string;
-  }>
+  type: "progress";
+  batchId: string;
+  researchId: string;
+  companyName: string;
+  stage: ResearchStage;
+  status: "started" | "completed" | "failed";
+  message: string;
+  completedSteps: number;
+  totalSteps: number;
+  durationMs: number | null;
+}
+```
+
+Final stream event:
+
+```ts
+{
+  type: "complete";
+  response: {
+    reports: CompanyReport[];
+    failures: Array<{
+      researchId: string;
+      companyName: string;
+      message: string;
+    }>;
+  };
 }
 ```
 
@@ -529,13 +558,17 @@ The same ID is used in:
 - Final report.
 - Future persistence records.
 
-Each company must be invoked independently:
+Each company must be invoked independently. The route guards each promise so the stream can preserve partial results:
 
 ```ts
-await Promise.allSettled(
-  companies.map(({ researchId, company }) =>
-    runCompanyResearch(researchId, company)
-  )
+await Promise.all(
+  companies.map(async ({ researchId, company }) => {
+    try {
+      return { report: await runCompanyResearch(researchId, company) };
+    } catch (error) {
+      return { failure: publicCompanyFailure(researchId, company, error) };
+    }
+  }),
 );
 ```
 
@@ -620,6 +653,18 @@ Claims should show small inline source badges such as `[S1]` and `[S2]`. The sou
 
 Progress indicators must be honest. Do not display fake node progress unless the API actually streams node updates.
 
+The implemented progress view uses LangGraph's task stream as its only source of stage state. A partial failure may finish below 100% when downstream stages never ran; the UI labels that state as incomplete rather than manufacturing completion.
+
+## Observability contract
+
+- The browser activity log is built from the same typed progress events as the progress bar.
+- Server logs are single-line JSON records for resolution, batch, company, graph-stage, and provider-call boundaries.
+- `batchId` and `researchId` correlate concurrent work without combining independent graph traces.
+- Durations are measured at stage and provider boundaries.
+- Logs must not include secrets, authorization headers, raw provider payloads, evidence excerpts, prompts, or generated report content.
+- Browser logs and server logs are ephemeral in Level 1. Persistent or centralized logging remains deferred.
+- LangSmith is the detailed graph/model trace destination and uses the same per-company `researchId`.
+
 ## Torq-inspired styling
 
 Define visual tokens in `app/globals.css`:
@@ -696,8 +741,11 @@ Add tests only around behavior that protects the contracts:
 - Grounding validation.
 - Source/evidence ID integrity.
 - Company-resolution status handling.
+- Exact-domain resolution, unique plausible-name resolution, and ambiguous partial-name handling.
 - Partial batch failure handling.
 - One-company/one-research-ID execution.
+- Fragmented newline-delimited progress stream parsing.
+- Event-driven progress rendering and structured log shape.
 
 Provider calls should be mocked for deterministic contract tests. At least one live local smoke test must use the real Tavily, Firecrawl, LLM, and LangSmith integrations.
 
@@ -723,8 +771,8 @@ The local milestone is complete when:
 
 - The app runs from a clean checkout with documented commands.
 - A non-technical user can complete the full flow without instructions.
-- One to five companies can be entered as tags.
-- Ambiguous names require explicit user selection.
+- One to five company names or domains can be entered as tags.
+- Unique matches continue automatically and ambiguous names require explicit selection.
 - Every report claim is evidence-backed.
 - Every report contains clickable source links.
 - Five companies produce five reports, five UUIDs, and five traces.

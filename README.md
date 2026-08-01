@@ -6,14 +6,15 @@ The implementation is complete through deterministic tests, production build, an
 
 ## What the product does
 
-1. Accepts one to five company names as removable tags.
-2. Searches for plausible official company identities.
-3. Requires human selection when a name has multiple matches.
+1. Accepts one to five company names or domains as removable tags.
+2. Searches for plausible official company identities and prefers an exact domain match.
+3. Continues automatically for a single match and requires human selection only when multiple plausible matches remain.
 4. Runs one independent LangGraph execution per selected company.
 5. Collects first-party, recent, hiring, and security evidence.
 6. Uses an LLM to classify evidence and synthesize the final report.
 7. Deterministically rejects unsupported evidence references.
 8. Returns successful company reports even when another company fails.
+9. Streams real graph-stage progress to the browser and records a timestamped run log.
 
 ## Local prerequisites
 
@@ -43,8 +44,8 @@ Secrets belong only in `.env.local`. That file is ignored by Git. No environment
 | `FIRECRAWL_API_KEY` | Yes | Targeted official website, product, and careers-page scraping. |
 | `LANGSMITH_TRACING` | Yes; must be `true` | Enables trace creation for every company graph invocation. |
 | `LANGSMITH_API_KEY` | Yes | Authenticates LangSmith tracing. |
-| `LANGSMITH_PROJECT` | Yes | Project used to group and find research traces. |
-| `LANGSMITH_ENDPOINT` | Keep the example value unless using another LangSmith endpoint | LangSmith API base URL. |
+| `LANGSMITH_PROJECT` | Yes | Project used to group and find research traces. This build uses `torq-customer-intelligence-agent`. |
+| `LANGSMITH_ENDPOINT` | Yes | LangSmith API base URL for the workspace region; use `https://eu.api.smith.langchain.com` for an EU workspace. |
 
 The app checks this environment contract before research begins. Missing keys produce a visible error; invalid provider authentication is not downgraded to a weak-evidence result.
 
@@ -72,7 +73,17 @@ securitySignals ───┘
 
 The four research nodes run in parallel. They use fixed search patterns or fixed first-party page targets; the LLM cannot author queries. Their typed outputs converge at synthesis. The final validation node has no LLM.
 
-For every company, `researchId` is preserved through resolution, selection, graph state, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. A batch uses `Promise.allSettled`, so one failure does not remove successful peers.
+For every company, `researchId` is preserved through resolution, selection, graph state, progress events, backend logs, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
+
+The research route responds as newline-delimited JSON. Each LangGraph task start, completion, or failure is streamed as a typed progress event before the final batch result. The progress bar and browser activity log are derived only from those server events; they do not use estimated timers.
+
+## Observability
+
+- The progress panel shows the current graph stage, per-company stage state, percentage complete, timestamps, and measured stage duration.
+- Server routes, provider calls, graph stages, and batch boundaries emit one structured JSON log line per event.
+- `batchId`, `researchId`, company name, stage, provider operation, status, and duration provide correlation across the browser log, terminal output, and LangSmith.
+- Logs intentionally exclude API keys, provider payloads, evidence excerpts, prompts, and report content.
+- LangSmith remains the detailed trace system for graph and model execution. Local JSON logs explain application and provider boundaries around those traces.
 
 ## Grounding model
 
@@ -116,7 +127,8 @@ Only after this live run passes should `sample-report.md` be replaced with the a
 - No persistence, authentication, watchlist, scheduling, or change detection.
 - Human resolution state is held in the browser and is lost on refresh.
 - Fixed `/products` and `/careers` first-party paths will not exist for every company; those misses appear as gaps.
-- Research completes as one HTTP request and does not stream per-node progress.
+- Research uses one long-lived HTTP request per batch and streams newline-delimited progress events while it runs.
+- Browser activity history is held only for the current flow, and backend JSON logs go only to the current server log destination; persistence and centralized log aggregation are deferred.
 - Provider rate limits and latency affect one-to-five company batches.
 - `sample-report.md` is pending a real credential-backed run.
 - A fresh npm advisory audit was blocked in this environment. The install reported three high-severity findings in the full dependency tree; re-run `npm audit` in an approved environment and review findings before deployment.
