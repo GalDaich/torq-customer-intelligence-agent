@@ -28,8 +28,12 @@ function validReport(): CompanyReport {
     recentSignals: [],
     hiringSignals: [],
     securitySignals: [],
+    technologySignals: [],
     likelyPainPoints: [{ painPoint: "Manual work", rationale: claim }],
-    talkingPoints: [{ point: "Discuss automation", rationale: claim }],
+    talkingPoints: [
+      { point: "Discuss automation", rationale: claim },
+      { point: "Ask about response workflows", rationale: claim },
+    ],
     confidenceAndGaps: ["No recent hiring evidence was found."],
     sources: [
       {
@@ -64,6 +68,23 @@ describe("strict schemas", () => {
         rawProviderPayload: { secret: "must not cross the boundary" },
       }),
     ).toThrow();
+  });
+
+  it("requires the assignment minimum of a pain-point hypothesis and 2–3 talking points", () => {
+    const report = validReport();
+    report.likelyPainPoints = [];
+    expect(() => CompanyReportSchema.parse(report)).toThrow();
+
+    const second = validReport();
+    second.talkingPoints = second.talkingPoints.slice(0, 1);
+    expect(() => CompanyReportSchema.parse(second)).toThrow();
+
+    const fourth = validReport();
+    fourth.talkingPoints.push(
+      { point: "Third", rationale: fourth.whatTheyDo },
+      { point: "Fourth", rationale: fourth.whatTheyDo },
+    );
+    expect(() => CompanyReportSchema.parse(fourth)).toThrow();
   });
 });
 
@@ -244,5 +265,82 @@ describe("grounding validation", () => {
     }];
 
     expect(() => validateGroundedReport(report)).toThrow("exactly one strongest evidence");
+  });
+
+  it("accepts one specific shared evidence record for a technology signal", () => {
+    const report = validReport();
+    report.sources.push({
+      id: "S2",
+      title: "Acme security architecture",
+      url: "https://acme.example/engineering/security-architecture",
+      publisher: "acme.example",
+      sourceType: "technology",
+      publishedAt: null,
+    });
+    report.evidence.push({
+      id: "E2",
+      sourceId: "S2",
+      excerpt: "Acme uses Splunk for security monitoring.",
+      collectedAt: "2026-08-01T09:00:00.000Z",
+    });
+    report.technologySignals = [{
+      technology: "Splunk",
+      category: "siem",
+      claim: {
+        text: "Acme uses Splunk for security monitoring.",
+        evidenceIds: ["E2"],
+        confidence: "high",
+      },
+      torqRelevance: {
+        text: "Splunk may be an alert-ingestion and response orchestration surface.",
+        evidenceIds: ["E2"],
+        confidence: "medium",
+      },
+    }];
+
+    expect(validateGroundedReport(report).technologySignals).toHaveLength(1);
+  });
+
+  it("rejects generic or duplicate technology signals", () => {
+    const report = validReport();
+    report.sources.push({
+      id: "S2",
+      title: "Engineering",
+      url: "https://acme.example/engineering",
+      publisher: "acme.example",
+      sourceType: "technology",
+      publishedAt: null,
+    });
+    report.evidence.push({
+      id: "E2",
+      sourceId: "S2",
+      excerpt: "Acme engineers use Splunk.",
+      collectedAt: "2026-08-01T09:00:00.000Z",
+    });
+    const signal = {
+      technology: "Splunk",
+      category: "siem" as const,
+      claim: {
+        text: "Acme uses Splunk.",
+        evidenceIds: ["E2"],
+        confidence: "medium" as const,
+      },
+      torqRelevance: {
+        text: "Splunk may be an orchestration surface.",
+        evidenceIds: ["E2"],
+        confidence: "low" as const,
+      },
+    };
+    report.technologySignals = [signal];
+
+    expect(() => validateGroundedReport(report)).toThrow("specific technical source");
+
+    report.sources[1] = {
+      ...report.sources[1],
+      title: "Acme security architecture",
+      url: "https://acme.example/engineering/security-architecture",
+    };
+    report.technologySignals = [signal, { ...signal, technology: "splunk" }];
+    expect(() => validateGroundedReport(report)).toThrow("appears more than once");
   });
 });

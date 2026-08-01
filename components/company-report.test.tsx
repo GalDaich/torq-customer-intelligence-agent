@@ -30,8 +30,33 @@ const report: CompanyReportData = {
   ],
   hiringSignals: [],
   securitySignals: [],
-  likelyPainPoints: [],
-  talkingPoints: [],
+  technologySignals: [],
+  likelyPainPoints: [{
+    painPoint: "Potential manual security work",
+    rationale: {
+      text: "Acme automates security operations.",
+      evidenceIds: ["E1"],
+      confidence: "low",
+    },
+  }],
+  talkingPoints: [
+    {
+      point: "Ask how Acme coordinates security automation.",
+      rationale: {
+        text: "Acme automates security operations.",
+        evidenceIds: ["E1"],
+        confidence: "medium",
+      },
+    },
+    {
+      point: "Explore where repeatable workflows matter.",
+      rationale: {
+        text: "Acme automates security operations.",
+        evidenceIds: ["E1"],
+        confidence: "medium",
+      },
+    },
+  ],
   confidenceAndGaps: ["Hiring evidence was not found."],
   sources: [
     {
@@ -68,8 +93,9 @@ describe("report accordion", () => {
   it("starts with every category collapsed", () => {
     const html = renderToStaticMarkup(<CompanyReport report={report} />);
 
-    expect((html.match(/aria-expanded="false"/g) ?? [])).toHaveLength(8);
+    expect((html.match(/aria-expanded="false"/g) ?? [])).toHaveLength(9);
     expect(html).toContain("What they do");
+    expect(html).toContain("Technology &amp; integration signals");
     expect(html).toContain("Sources (1)");
     expect(html).not.toContain("Acme automates security operations.");
   });

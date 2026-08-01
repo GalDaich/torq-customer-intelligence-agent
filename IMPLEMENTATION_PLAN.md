@@ -7,7 +7,7 @@ Completed locally:
 - Next.js App Router TypeScript application and server-only environment contract.
 - Strict Zod schemas and deterministic claim-to-evidence-to-source validation, including generic-source and duplicate-job rejection.
 - Tavily and Firecrawl normalization wrappers.
-- Four parallel research nodes, LLM synthesis, and deterministic final validation.
+- Five parallel research nodes, including named technology-stack research, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, graph trace tags, and pre-graph identity-normalization tracing.
 - Tavily-backed primary-homepage discovery, few-shot LLM identity ranking and normalization, mandatory per-company confirmation/manual entry/discard, independent batch execution, and partial failures.
 - LangGraph task-event streaming with an event-driven progress bar and no browser activity log.
@@ -15,12 +15,12 @@ Completed locally:
 - Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, single-open report accordions, source badges, and visible gaps.
 - Dedicated root `prompts/` modules for every LLM operation; no runtime prompt remains inline with orchestration code.
 - Focused tests, lint, type-checking, optimized production build, and missing-credential browser verification.
+- A credential-backed HiBob report that completed all seven graph stages without failure and is preserved in `sample-report.md`.
 
 Pending before the local milestone can be called complete:
 
 - Run the one-company, ambiguous-name, five-company, weak-data, and provider-failure live checks.
 - Verify matching LangSmith traces and every external source link.
-- Replace the honest placeholder in `sample-report.md` with output from a real run.
 - Re-run the npm advisory audit in an environment approved to query npm's advisory service.
 
 Deployment and domain work remain deferred.
@@ -63,6 +63,7 @@ The first milestone is local execution and behavioral verification. Deployment t
   - Recent news, funding, product, and leadership signals.
   - Hiring signals.
   - Security and operational signals.
+  - Named technology-stack and Torq-relevant integration signals.
 - Tavily for web search.
 - Firecrawl for targeted first-party page scraping.
 - LLM analysis inside research nodes and final report synthesis.
@@ -349,6 +350,23 @@ const SecuritySignals = z.object({
 }).strict();
 ```
 
+#### Technology signals
+
+```ts
+const TechnologySignal = z.object({
+  technology: z.string(),
+  category: z.enum(["cloud", "siem", "edr_xdr", "identity", "email_security", "cloud_security", "vulnerability_management", "threat_intelligence", "ticketing", "collaboration", "devops", "other"]),
+  claim: GroundedClaim,
+  torqRelevance: GroundedClaim
+}).strict();
+
+const TechnologySignals = z.object({
+  signals: z.array(TechnologySignal).max(12),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string())
+}).strict();
+```
+
 ### Final report
 
 ```ts
@@ -369,15 +387,16 @@ const CompanyReport = z.object({
   recentSignals: z.array(RecentSignal),
   hiringSignals: z.array(HiringSignal),
   securitySignals: z.array(SecuritySignal),
-  likelyPainPoints: z.array(PainPoint),
-  talkingPoints: z.array(TalkingPoint),
+  technologySignals: z.array(TechnologySignal),
+  likelyPainPoints: z.array(PainPoint).min(1).max(3),
+  talkingPoints: z.array(TalkingPoint).min(2).max(3),
   confidenceAndGaps: z.array(z.string()).min(1),
   sources: z.array(Source),
   evidence: z.array(Evidence)
 }).strict();
 ```
 
-`hiringSignals` and `securitySignals` are retained in the final report so the
+`hiringSignals`, `securitySignals`, and `technologySignals` are retained in the final report so the
 required report UI can render those graph outputs without discarding evidence.
 
 ## API contracts
@@ -478,6 +497,7 @@ Selected company
     -> recentSignals
     -> hiringSignals
     -> securitySignals
+    -> technologySignals
     -> synthesizeReport
     -> validateReport
     -> final report
@@ -489,45 +509,51 @@ The research nodes should be parallelizable because they are independent evidenc
 
 #### `firstPartyContext`
 
-- Tool: Firecrawl scrape.
-- Target: selected official website and, when available, a relevant product page.
+- Tool: Firecrawl map plus targeted scrapes.
+- Target: selected official homepage plus up to two high-value company/platform/product/about pages discovered from the official site map.
 - Extract plain-language company description and products.
 - Preserve source and evidence lineage.
 
 #### `recentSignals`
 
 - Tool: Tavily Search.
-- Dedicated search patterns for recent news, funding, leadership, and product activity.
+- Two advanced-depth, score-filtered searches for recent funding/expansion/leadership and product/partnership activity, constrained to the last year.
 - Extract only evidence-backed signals.
 
 #### `hiringSignals`
 
 - Tool: Tavily Search.
-- Dedicated patterns such as:
+- Two advanced-depth, score-filtered patterns cover security roles and adjacent DevSecOps/platform/infrastructure/IT-automation roles.
 
 ```text
-"{company}" careers security engineer
-"{company}" hiring SOC cloud security incident response
-"{company}" engineering hiring security team
+"{company}" open security SOC incident response cloud security identity job role
+"{company}" open platform engineering DevSecOps infrastructure IT automation job role
 ```
 
 - Accept only specific open roles or item-specific hiring articles; reject generic careers and jobs indexes.
 - Consolidate the same position across employer, ATS, LinkedIn, Indeed, and other republished listings, retaining one strongest source.
 - Treat missing dates as unknown rather than inventing them.
+- Exclude common aggregators during retrieval so direct employer and ATS evidence is preferred before deduplication.
 
 #### `securitySignals`
 
 - Tool: Tavily Search.
-- Dedicated patterns such as:
+- Advanced-depth plans separate durable security/compliance evidence from one-year incident and threat news.
 
 ```text
-"{company}" security operations SOC incident response
-"{company}" cybersecurity cloud security compliance
-"{company}" SIEM SOAR security automation
-"{company}" breach vulnerability security incident
+"{company}" security operations SOC incident response compliance security team automation
+"{company}" breach vulnerability cloud security identity phishing threat response
 ```
 
 - Separate explicit security evidence from inferred operational complexity.
+
+#### `technologySignals`
+
+- Tool: Tavily Search.
+- Three advanced-depth, score-filtered plans inspect public security-stack mentions, first-party engineering architecture, and specific job requirements.
+- Accept only explicitly named technologies from a specific company page, engineering article, technical document, case study, or individual job posting.
+- Return one signal per technology with one shared strongest evidence record for both the factual use claim and bounded Torq relevance.
+- Treat a named tool as a potential integration surface, never as proof of fragmentation, manual work, pain, or buying intent.
 
 #### `synthesizeReport`
 
@@ -560,7 +586,8 @@ These rules must be enforced in code and prompts:
 8. Generic careers, jobs, news, and index pages cannot support item-specific findings.
 9. The same job or event cannot be counted repeatedly because multiple sites republished it.
 10. Hiring roles cite exactly one strongest item-specific evidence record.
-11. The final report retains only cited evidence and the source list needed by the UI.
+11. Named technologies cite exactly one shared strongest item-specific evidence record and cannot repeat.
+12. The final report retains only cited evidence and the source list needed by the UI.
 
 ## UUID and LangSmith tracing
 
@@ -649,9 +676,10 @@ Each report should show:
 4. Hiring signals.
 5. Security signals.
 6. Likely Torq-relevant pain points.
-7. Suggested talking points.
-8. Confidence and gaps.
-9. Compact sources section.
+7. Technology and integration signals.
+8. Suggested talking points.
+9. Confidence and gaps.
+10. Compact sources section.
 
 Claims should show small inline source badges such as `[S1]` and `[S2]`. The source list should contain clickable titles or publisher labels that open the actual URL in a new tab.
 
@@ -774,6 +802,9 @@ Add tests only around behavior that protects the contracts:
 - One-company/one-research-ID execution.
 - Fragmented newline-delimited progress stream parsing.
 - Event-driven progress rendering without activity-log output.
+- Node-specific Tavily query/depth/recency/domain/score plans and Firecrawl map/scrape options.
+- Named-technology specificity, one-source selection, deduplication, and Torq-inference boundaries.
+- Report minimums of 1–3 pain-point hypotheses and exactly 2–3 talking points.
 
 Provider calls should be mocked for deterministic contract tests. At least one live local smoke test must use the real Tavily, Firecrawl, LLM, and LangSmith integrations.
 

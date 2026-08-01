@@ -12,9 +12,11 @@ import { hiringSignalMessages } from "../prompts/hiring-signals";
 import { recentSignalMessages } from "../prompts/recent-signals";
 import { synthesisMessages } from "../prompts/report-synthesis";
 import { securitySignalMessages } from "../prompts/security-signals";
+import { technologySignalMessages } from "../prompts/technology-signals";
 import {
   retainEvidenceForClaims,
   retainStrongHiringEvidence,
+  retainStrongTechnologyEvidence,
 } from "./evidence-quality";
 import { retainCitedLineage, validateGroundedReport } from "./grounding";
 import {
@@ -29,12 +31,21 @@ import {
   SecuritySignalSchema,
   SecuritySignalsSchema,
   SourceSchema,
+  TechnologySignalsSchema,
   type CompanyReport,
   type ResearchStage,
   type ResolvedCompany,
 } from "./schemas";
 import {
+  hiringSignalSearchPlan,
+  recentSignalSearchPlan,
+  securitySignalSearchPlan,
+  technologySignalSearchPlan,
+  type FocusedSearchPlan,
+} from "./research-plans";
+import {
   assertResearchEnvironment,
+  mapFirecrawl,
   mergeCorpora,
   ProtectedBoundaryError,
   ProviderError,
@@ -57,6 +68,7 @@ const ReportContentSchema = z
     recentSignals: z.array(RecentSignalSchema),
     hiringSignals: HiringSignalsSchema.shape.signals,
     securitySignals: z.array(SecuritySignalSchema),
+    technologySignals: TechnologySignalsSchema.shape.signals,
     likelyPainPoints: z.array(
       z
         .object({
@@ -64,7 +76,7 @@ const ReportContentSchema = z
           rationale: GroundedClaimSchema,
         })
         .strict(),
-    ),
+    ).min(1).max(3),
     talkingPoints: z.array(
       z
         .object({
@@ -72,8 +84,8 @@ const ReportContentSchema = z
           rationale: GroundedClaimSchema,
         })
         .strict(),
-    ),
-    confidenceAndGaps: z.array(z.string().min(1)).min(1),
+    ).min(2).max(3),
+    confidenceAndGaps: z.array(z.string().min(1)).min(1).max(6),
   })
   .strict();
 
@@ -89,6 +101,8 @@ const ResearchState = new StateSchema({
   hiringResult: HiringSignalsSchema.optional(),
   securityCorpus: ResearchCorpusSchema.optional(),
   securityResult: SecuritySignalsSchema.optional(),
+  technologyCorpus: ResearchCorpusSchema.optional(),
+  technologyResult: TechnologySignalsSchema.optional(),
   reportCandidate: CompanyReportSchema.optional(),
   report: CompanyReportSchema.optional(),
 });
@@ -127,6 +141,11 @@ const STAGE_MESSAGES: Record<
     started: "Researching and classifying security operations, compliance, and incident signals.",
     completed: "Security-signal research completed.",
     failed: "Security-signal research failed.",
+  },
+  technologySignals: {
+    started: "Researching named security, cloud, identity, and workflow technologies.",
+    completed: "Technology-stack research completed.",
+    failed: "Technology-stack research failed.",
   },
   synthesizeReport: {
     started: "Synthesizing evidence into the customer intelligence report.",
@@ -179,10 +198,42 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
   gaps: string[];
 }> {
   const origin = new URL(company.websiteUrl).origin;
-  const targets = [
-    { url: company.websiteUrl, label: "official website", sourceType: "company" as const },
-    { url: new URL("/products", origin).toString(), label: "product page", sourceType: "company" as const },
-  ];
+  const gaps: string[] = [];
+  let mappedLinks: Awaited<ReturnType<typeof mapFirecrawl>> = [];
+  try {
+    mappedLinks = await mapFirecrawl({
+      url: origin,
+      search: "company overview products platform solutions about",
+      limit: 10,
+    });
+  } catch (error) {
+    if (
+      error instanceof ProviderError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      throw error;
+    }
+    gaps.push("The official site map could not be read; first-party research used the homepage only.");
+  }
+
+  const blockedPath = /\/(blog|news|press|careers?|jobs?|events?|resources?|privacy|terms|legal|login|contact|demo)(\/|$)/i;
+  const officialHost = new URL(origin).hostname.replace(/^www\./, "");
+  const targetUrls = [
+    origin,
+    ...mappedLinks
+      .map((link) => link.url)
+      .filter((url) => {
+        const parsed = new URL(url);
+        return parsed.hostname.replace(/^www\./, "") === officialHost &&
+          parsed.pathname !== "/" &&
+          !blockedPath.test(parsed.pathname);
+      }),
+  ].filter((url, index, values) => values.indexOf(url) === index).slice(0, 3);
+  const targets = targetUrls.map((url, index) => ({
+    url,
+    label: index === 0 ? "official homepage" : "mapped first-party page",
+    sourceType: "company" as const,
+  }));
   const settled = await Promise.allSettled(
     targets.map((target, index) =>
       scrapeFirecrawl({
@@ -193,8 +244,6 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
     ),
   );
   const corpora: ResearchCorpus[] = [];
-  const gaps: string[] = [];
-
   settled.forEach((result, index) => {
     if (result.status === "fulfilled" && result.value.evidence.length > 0) {
       corpora.push(result.value);
@@ -213,20 +262,16 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
 }
 
 async function searchPatterns(
-  patterns: string[],
+  patterns: FocusedSearchPlan[],
   prefix: string,
-  sourceType: "news" | "hiring" | "security",
-  topic: "general" | "news" = "general",
+  sourceType: "news" | "hiring" | "security" | "technology",
 ): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
   const settled = await Promise.allSettled(
-    patterns.map((query, index) =>
+    patterns.map((pattern, index) =>
       searchTavily({
-        query,
+        ...pattern,
         idPrefix: `${prefix}${index + 1}`,
         sourceType,
-        maxResults: 4,
-        topic,
-        ...(topic === "news" ? { days: 365 } : {}),
       }),
     ),
   );
@@ -281,13 +326,8 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
 const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    [
-      `"${company.name}" recent news funding`,
-      `"${company.name}" product launch announcement`,
-      `"${company.name}" leadership executive appointment`,
-    ],
+    recentSignalSearchPlan(company),
     "REC",
-    "news",
     "news",
   );
   if (corpus.evidence.length === 0) {
@@ -326,14 +366,9 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
 const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    [
-      `"${company.name}" careers security engineer`,
-      `"${company.name}" hiring SOC cloud security incident response`,
-      `"${company.name}" engineering hiring security team`,
-    ],
+    hiringSignalSearchPlan(company),
     "HIR",
     "hiring",
-    "general",
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -368,14 +403,9 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
 const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    [
-      `"${company.name}" security operations SOC incident response`,
-      `"${company.name}" cybersecurity cloud security compliance`,
-      `"${company.name}" SIEM SOAR security automation breach vulnerability`,
-    ],
+    securitySignalSearchPlan(company),
     "SEC",
     "security",
-    "general",
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -410,12 +440,54 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   }
 };
 
+const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
+  const { company } = state;
+  const { corpus, gaps } = await searchPatterns(
+    technologySignalSearchPlan(company),
+    "TEC",
+    "technology",
+  );
+  if (corpus.evidence.length === 0) {
+    return {
+      technologyCorpus: corpus,
+      technologyResult: {
+        signals: [],
+        confidence: "low",
+        gaps: [...gaps, "No specific technology-stack evidence was found."],
+      },
+    };
+  }
+
+  try {
+    const extraction = model().withStructuredOutput(TechnologySignalsSchema, {
+      name: "extract_technology_signals",
+      strict: true,
+    });
+    const technologySignals = await extraction.invoke(technologySignalMessages(company, corpus));
+    const selectedCorpus = retainStrongTechnologyEvidence(corpus, technologySignals.signals);
+    return {
+      technologyCorpus: selectedCorpus,
+      technologyResult: { ...technologySignals, gaps: [...gaps, ...technologySignals.gaps] },
+    };
+  } catch {
+    return {
+      technologyCorpus: { sources: [], evidence: [] },
+      technologyResult: {
+        signals: [],
+        confidence: "low",
+        gaps: [...gaps, "Technology-stack extraction failed; no finding was substituted."],
+      },
+    };
+  }
+};
+
 const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
   const corpus = mergeCorpora([
     state.firstPartyCorpus ?? { sources: [], evidence: [] },
     state.recentCorpus ?? { sources: [], evidence: [] },
     state.hiringCorpus ?? { sources: [], evidence: [] },
     state.securityCorpus ?? { sources: [], evidence: [] },
+    state.technologyCorpus ?? { sources: [], evidence: [] },
   ]);
   if (corpus.evidence.length === 0) {
     throw new ProtectedBoundaryError(
@@ -438,12 +510,18 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
     confidence: "low" as const,
     gaps: ["Security-signal research did not complete."],
   };
+  const technologySignals = state.technologyResult ?? {
+    signals: [],
+    confidence: "low" as const,
+    gaps: ["Technology-stack research did not complete."],
+  };
   const nodeGaps = [
     ...(state.firstPartyGaps ?? []),
     ...(state.firstPartyResult?.gaps ?? []),
     ...recentSignals.gaps,
     ...hiringSignals.gaps,
     ...securitySignals.gaps,
+    ...technologySignals.gaps,
   ];
   const synthesizer = model().withStructuredOutput(ReportContentSchema, {
     name: "synthesize_customer_intelligence_report",
@@ -460,6 +538,7 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
           recentSignals,
           hiringSignals,
           securitySignals,
+          technologySignals,
         },
         nodeGaps,
       }),
@@ -475,7 +554,7 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
         researchId: state.researchId,
         company: state.company,
         ...content,
-        confidenceAndGaps: [...new Set([...nodeGaps, ...content.confidenceAndGaps])],
+        confidenceAndGaps: content.confidenceAndGaps,
         sources: corpus.sources,
         evidence: corpus.evidence,
       }),
@@ -504,14 +583,22 @@ export const researchGraph = new StateGraph({ state: ResearchState, output: Rese
   .addNode("recentSignals", withStageBoundary("recentSignals", recentSignalsNode))
   .addNode("hiringSignals", withStageBoundary("hiringSignals", hiringSignalsNode))
   .addNode("securitySignals", withStageBoundary("securitySignals", securitySignalsNode))
+  .addNode("technologySignals", withStageBoundary("technologySignals", technologySignalsNode))
   .addNode("synthesizeReport", withStageBoundary("synthesizeReport", synthesizeReportNode))
   .addNode("validateReport", withStageBoundary("validateReport", validateReportNode))
   .addEdge(START, "firstPartyContext")
   .addEdge(START, "recentSignals")
   .addEdge(START, "hiringSignals")
   .addEdge(START, "securitySignals")
+  .addEdge(START, "technologySignals")
   .addEdge(
-    ["firstPartyContext", "recentSignals", "hiringSignals", "securitySignals"],
+    [
+      "firstPartyContext",
+      "recentSignals",
+      "hiringSignals",
+      "securitySignals",
+      "technologySignals",
+    ],
     "synthesizeReport",
   )
   .addEdge("synthesizeReport", "validateReport")

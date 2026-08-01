@@ -20,16 +20,17 @@ describe("research progress", () => {
             status: "completed",
             message: "Recent-signal research completed.",
             completedSteps: 1,
-            totalSteps: 6,
+            totalSteps: 7,
             durationMs: 120,
           },
         ]}
       />,
     );
 
-    expect(html).toContain('aria-valuenow="17"');
+    expect(html).toContain('aria-valuenow="14"');
     expect(html).toContain("Recent signals");
     expect(html).toContain("stage-completed");
+    expect(html).toContain("Tech stack");
     expect(html).not.toContain("Run log");
     expect(html).not.toContain("120ms");
   });

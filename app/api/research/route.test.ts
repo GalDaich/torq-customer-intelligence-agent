@@ -42,8 +42,12 @@ function reportFor(researchId: string, company: ResolvedCompany): CompanyReport 
     recentSignals: [],
     hiringSignals: [],
     securitySignals: [],
-    likelyPainPoints: [],
-    talkingPoints: [],
+    technologySignals: [],
+    likelyPainPoints: [{ painPoint: "Potential manual security work", rationale: claim }],
+    talkingPoints: [
+      { point: "Ask how security work is coordinated", rationale: claim },
+      { point: "Explore repeatable response workflows", rationale: claim },
+    ],
     confidenceAndGaps: ["Limited evidence."],
     sources: [
       {
@@ -131,7 +135,7 @@ describe("independent research execution", () => {
       stage: "recentSignals",
       status: "started",
       completedSteps: 0,
-      totalSteps: 6,
+      totalSteps: 7,
     });
     expect(events[1]).toMatchObject({
       type: "progress",

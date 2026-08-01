@@ -2,7 +2,7 @@
 
 A local-first Level 1 browser product for researching one to five companies from public sources and turning the evidence into concise, Torq-relevant customer intelligence.
 
-The implementation is complete through deterministic tests, production build, browser verification, and initial credential-backed user testing. The full one-to-five-company acceptance matrix and trace review remain pending. Deployment is out of scope until that local gate passes.
+The implementation is complete through deterministic tests, production build, browser verification, and a successful credential-backed HiBob report. The full one-to-five-company acceptance matrix and trace review remain pending. Deployment is out of scope until that local gate passes.
 
 ## What the product does
 
@@ -11,7 +11,7 @@ The implementation is complete through deterministic tests, production build, br
 3. Uses a few-shot, strict LLM normalization step to rank primary domains first and turn raw page titles such as `Join monday.com` into a clean grounded identity such as `monday.com`.
 4. Requires an explicit decision for every company: confirm a suggestion, enter the official website manually, or discard the company. Research never starts from normalization alone.
 5. Runs one independent LangGraph execution per selected company.
-6. Collects first-party, recent, hiring, and security evidence while rejecting generic index and careers pages.
+6. Collects first-party, recent, hiring, security, and named technology-stack evidence while rejecting generic index and careers pages.
 7. Uses an LLM to classify evidence and passes only node-selected lineage into final synthesis.
 8. Deterministically rejects unsupported, uncited, generic, and duplicate evidence, including the same job repeated across sources.
 9. Returns successful company reports even when another company fails.
@@ -70,10 +70,11 @@ Each selected company gets its own UUID and graph invocation:
 firstPartyContext ─┐
 recentSignals ─────┤
 hiringSignals ─────┼─> synthesizeReport -> validateReport
-securitySignals ───┘
+securitySignals ───┤
+technologySignals ─┘
 ```
 
-The four research nodes run in parallel. They use fixed search patterns or fixed first-party page targets; the LLM cannot author queries. Each node passes only the evidence IDs selected in its typed output into synthesis, so omitted raw search results cannot be reintroduced later. The final validation node has no LLM.
+The five research nodes run in parallel. The LLM cannot author queries. Firecrawl maps the confirmed official site and scrapes only the homepage plus the strongest company/platform/product/about targets. Tavily uses dedicated natural-language plans per open-web node, advanced relevance chunks, bounded result counts, calibrated score thresholds, one-year recency for recent signals, official-domain searches for authoritative announcements, and job-aggregator exclusions where direct postings are preferred. Each node passes only the evidence IDs selected in its typed output into synthesis, so omitted raw search results cannot be reintroduced later. The final validation node has no LLM.
 
 Every LLM instruction lives in its own editable TypeScript module under `prompts/`. The graph and normalization code contain no inline system or user prompts.
 
@@ -101,7 +102,7 @@ claim -> evidence ID -> source ID -> real clickable URL
 
 Retrieval removes generic careers, jobs, newsroom, and index pages where they cannot support a specific finding. Corpus merging canonicalizes URLs and removes repeated excerpts. After classification, only node-selected evidence proceeds to synthesis; after synthesis, only cited lineage proceeds to validation and the UI.
 
-The LLM can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. `validateGroundedReport` checks strict Zod contracts, unique canonical URLs and excerpts, evidence-to-source integrity, complete citation coverage, one strongest source per hiring role, and duplicate job identities. Invalid output is rejected; no deterministic fallback report is manufactured.
+The LLM can output only existing evidence IDs. It cannot output source objects, URLs, titles, or excerpts. `validateGroundedReport` checks strict Zod contracts, unique canonical URLs and excerpts, evidence-to-source integrity, complete citation coverage, one strongest source per hiring role and named technology, duplicate jobs and technologies, at least one evidence-backed pain-point hypothesis, and exactly 2–3 talking points. Invalid output is rejected; no deterministic fallback report is manufactured.
 
 ## LangSmith verification
 
@@ -129,21 +130,23 @@ Once all credentials are populated, verify:
 - Every source badge opens its corresponding public URL.
 - Duplicate versions of the same job appear once and cite one strongest item-specific source.
 - Generic careers and index pages never appear as report evidence.
+- Named technologies appear once, cite one specific source, and are framed as possible Torq integration surfaces rather than known pain or buying intent.
+- Every completed report contains 1–3 pain-point hypotheses and exactly 2–3 company-specific talking points.
 - Report categories start closed and opening one closes the previously open category.
 
-Only after this live run passes should `sample-report.md` be replaced with the actual output and deployment be considered.
+The one-company known-domain case has passed and is preserved in `sample-report.md`. Complete the remaining cases above before deployment is considered.
 
 ## Known limitations
 
 - No persistence, authentication, watchlist, scheduling, or change detection.
 - Human resolution state is held in the browser and is lost on refresh.
-- The fixed `/products` first-party path will not exist for every company; that miss appears as a gap.
+- Firecrawl site mapping may still miss pages hidden from navigation and sitemaps; the homepage remains the honest fallback.
 - Research uses one long-lived HTTP request per batch and streams newline-delimited progress events while it runs.
 - The progress stream is transient UI state and is not retained as activity history.
 - Provider rate limits and latency affect one-to-five company batches.
-- `sample-report.md` is pending a real credential-backed run.
+- The included HiBob sample proves one real single-company run; it does not replace the pending five-company, ambiguity, failure, and LangSmith-trace acceptance checks.
 - A fresh npm advisory audit was blocked in this environment. The install reported three high-severity findings in the full dependency tree; re-run `npm audit` in an approved environment and review findings before deployment.
 
 ## Scope authority
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the fixed contracts, product states, grounding requirements, and deployment gate.
+See [REQUIREMENTS_COVERAGE.md](./REQUIREMENTS_COVERAGE.md) for the assignment traceability matrix and [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the fixed contracts, product states, grounding requirements, and deployment gate.

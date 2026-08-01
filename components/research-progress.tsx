@@ -5,6 +5,7 @@ const STAGES: Array<{ id: ResearchStage; label: string }> = [
   { id: "recentSignals", label: "Recent signals" },
   { id: "hiringSignals", label: "Hiring" },
   { id: "securitySignals", label: "Security" },
+  { id: "technologySignals", label: "Tech stack" },
   { id: "synthesizeReport", label: "Synthesis" },
   { id: "validateReport", label: "Validation" },
 ];

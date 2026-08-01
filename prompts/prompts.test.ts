@@ -5,6 +5,7 @@ import { hiringSignalMessages } from "./hiring-signals";
 import { recentSignalMessages } from "./recent-signals";
 import { synthesisMessages } from "./report-synthesis";
 import { securitySignalMessages } from "./security-signals";
+import { technologySignalMessages } from "./technology-signals";
 import type { CompanyCandidate, ResolvedCompany } from "../lib/schemas";
 
 const company: ResolvedCompany = {
@@ -63,6 +64,7 @@ describe("dedicated prompt modules", () => {
       recentSignalMessages(company, corpus),
       hiringSignalMessages(company, corpus),
       securitySignalMessages(company, corpus),
+      technologySignalMessages(company, corpus),
       synthesisMessages({
         company,
         corpus,
@@ -70,6 +72,7 @@ describe("dedicated prompt modules", () => {
           recentSignals: { signals: [], confidence: "low", gaps: ["None found."] },
           hiringSignals: { signals: [], confidence: "low", gaps: ["None found."] },
           securitySignals: { signals: [], confidence: "low", gaps: ["None found."] },
+          technologySignals: { signals: [], confidence: "low", gaps: ["None found."] },
         },
         nodeGaps: [],
       }),
@@ -82,5 +85,12 @@ describe("dedicated prompt modules", () => {
     }
     expect(prompts[2]).toContain("generic careers page");
     expect(prompts[2]).toContain("exactly one evidence ID per role");
+    expect(prompts[4]).toContain("Torq is an AI SOC");
+    expect(prompts[4]).toContain("one signal per technology");
+    expect(prompts[4]).toContain("closed, expired");
+    expect(prompts[4]).toContain("customer experience");
+    expect(prompts[5]).toContain("exactly 2–3 specific");
+    expect(prompts[5]).toContain("integration or orchestration surfaces");
+    expect(prompts[5]).toContain("1–6 candid");
   });
 });

@@ -6,6 +6,7 @@ import {
 } from "@/lib/graph";
 import {
   ResearchCompleteEventSchema,
+  RESEARCH_STAGES,
   ResearchProgressEventSchema,
   ResearchRequestSchema,
   ResearchResponseSchema,
@@ -58,7 +59,7 @@ export function createResearchStream(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const batchId = randomUUID();
-  const totalSteps = companies.length * 6;
+  const totalSteps = companies.length * RESEARCH_STAGES.length;
   let completedSteps = 0;
   let sequence = 0;
 

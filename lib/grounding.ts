@@ -7,7 +7,10 @@ import {
   canonicalEvidenceUrl,
   evidenceFingerprint,
   hiringSignalsDescribeSamePosition,
+  isAtomicTechnologyName,
+  isGenericEvidenceSource,
   isGenericHiringSource,
+  technologySignalsDescribeSameTechnology,
 } from "./evidence-quality";
 
 export class GroundingValidationError extends Error {
@@ -23,6 +26,7 @@ function allClaims(report: CompanyReport): GroundedClaim[] {
     ...report.recentSignals.map((signal) => signal.claim),
     ...report.hiringSignals.map((signal) => signal.claim),
     ...report.securitySignals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
+    ...report.technologySignals.flatMap((signal) => [signal.claim, signal.torqRelevance]),
     ...report.likelyPainPoints.map((painPoint) => painPoint.rationale),
     ...report.talkingPoints.map((talkingPoint) => talkingPoint.rationale),
   ];
@@ -115,6 +119,51 @@ export function validateGroundedReport(input: unknown): CompanyReport {
       if (hiringSignalsDescribeSamePosition(hiringSignal, report.hiringSignals[rightIndex])) {
         throw new GroundingValidationError(
           `Hiring signal ${hiringSignal.roleTitle} appears more than once.`,
+        );
+      }
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < report.technologySignals.length; leftIndex += 1) {
+    const technologySignal = report.technologySignals[leftIndex];
+    if (!isAtomicTechnologyName(technologySignal.technology)) {
+      throw new GroundingValidationError(
+        `Technology signal ${technologySignal.technology} must name exactly one technology.`,
+      );
+    }
+    const claimEvidenceIds = technologySignal.claim.evidenceIds;
+    const relevanceEvidenceIds = technologySignal.torqRelevance.evidenceIds;
+    if (
+      claimEvidenceIds.length !== 1 ||
+      relevanceEvidenceIds.length !== 1 ||
+      claimEvidenceIds[0] !== relevanceEvidenceIds[0]
+    ) {
+      throw new GroundingValidationError(
+        `Technology signal ${technologySignal.technology} must cite one shared strongest evidence record.`,
+      );
+    }
+    const evidence = evidenceById.get(claimEvidenceIds[0]);
+    const source = evidence ? sourceById.get(evidence.sourceId) : undefined;
+    // One specific page can legitimately support two nodes (for example, a job posting can
+    // support both hiring and technology findings), so canonical-source merging may retain
+    // the earlier node's sourceType while preserving the technology node's evidence record.
+    if (!source || isGenericEvidenceSource(source)) {
+      throw new GroundingValidationError(
+        `Technology signal ${technologySignal.technology} must cite a specific technical source.`,
+      );
+    }
+
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < report.technologySignals.length;
+      rightIndex += 1
+    ) {
+      if (technologySignalsDescribeSameTechnology(
+        technologySignal,
+        report.technologySignals[rightIndex],
+      )) {
+        throw new GroundingValidationError(
+          `Technology signal ${technologySignal.technology} appears more than once.`,
         );
       }
     }

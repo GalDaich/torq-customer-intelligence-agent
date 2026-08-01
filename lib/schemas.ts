@@ -11,6 +11,7 @@ export const SourceSchema = z
       "news",
       "hiring",
       "security",
+      "technology",
       "funding",
       "linkedin",
       "other",
@@ -133,6 +134,36 @@ export const SecuritySignalsSchema = z
   })
   .strict();
 
+export const TechnologySignalSchema = z
+  .object({
+    technology: z.string().min(1),
+    category: z.enum([
+      "cloud",
+      "siem",
+      "edr_xdr",
+      "identity",
+      "email_security",
+      "cloud_security",
+      "vulnerability_management",
+      "threat_intelligence",
+      "ticketing",
+      "collaboration",
+      "devops",
+      "other",
+    ]),
+    claim: GroundedClaimSchema,
+    torqRelevance: GroundedClaimSchema,
+  })
+  .strict();
+
+export const TechnologySignalsSchema = z
+  .object({
+    signals: z.array(TechnologySignalSchema).max(12),
+    confidence: z.enum(["high", "medium", "low"]),
+    gaps: z.array(z.string()),
+  })
+  .strict();
+
 export const PainPointSchema = z
   .object({
     painPoint: z.string().min(1),
@@ -155,9 +186,10 @@ export const CompanyReportSchema = z
     recentSignals: z.array(RecentSignalSchema),
     hiringSignals: z.array(HiringSignalSchema),
     securitySignals: z.array(SecuritySignalSchema),
-    likelyPainPoints: z.array(PainPointSchema),
-    talkingPoints: z.array(TalkingPointSchema),
-    confidenceAndGaps: z.array(z.string().min(1)).min(1),
+    technologySignals: z.array(TechnologySignalSchema),
+    likelyPainPoints: z.array(PainPointSchema).min(1).max(3),
+    talkingPoints: z.array(TalkingPointSchema).min(2).max(3),
+    confidenceAndGaps: z.array(z.string().min(1)).min(1).max(6),
     sources: z.array(SourceSchema),
     evidence: z.array(EvidenceSchema),
   })
@@ -206,14 +238,17 @@ export const ResearchResponseSchema = z
   })
   .strict();
 
-export const ResearchStageSchema = z.enum([
+export const RESEARCH_STAGES = [
   "firstPartyContext",
   "recentSignals",
   "hiringSignals",
   "securitySignals",
+  "technologySignals",
   "synthesizeReport",
   "validateReport",
-]);
+] as const;
+
+export const ResearchStageSchema = z.enum(RESEARCH_STAGES);
 
 export const ResearchProgressEventSchema = z
   .object({
@@ -271,6 +306,8 @@ export type HiringSignal = z.infer<typeof HiringSignalSchema>;
 export type HiringSignals = z.infer<typeof HiringSignalsSchema>;
 export type SecuritySignal = z.infer<typeof SecuritySignalSchema>;
 export type SecuritySignals = z.infer<typeof SecuritySignalsSchema>;
+export type TechnologySignal = z.infer<typeof TechnologySignalSchema>;
+export type TechnologySignals = z.infer<typeof TechnologySignalsSchema>;
 export type CompanyReport = z.infer<typeof CompanyReportSchema>;
 export type ResearchResponse = z.infer<typeof ResearchResponseSchema>;
 export type ResearchStage = z.infer<typeof ResearchStageSchema>;

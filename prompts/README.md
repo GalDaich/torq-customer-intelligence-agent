@@ -7,7 +7,8 @@ Every OpenAI operation has one editable prompt module in this directory:
 - `recent-signals.ts` — news, funding, product, and leadership node.
 - `hiring-signals.ts` — specific security-role node.
 - `security-signals.ts` — security and operational signal node.
+- `technology-signals.ts` — named technology and Torq-relevant integration-surface node.
 - `report-synthesis.ts` — final report-authoring node.
-- `shared.ts` — common grounding and evidence-quality rules plus the typed evidence payload builder.
+- `shared.ts` — common grounding rules, Torq product-relevance frame, and typed evidence payload builder.
 
 Runtime schemas remain in `lib/schemas.ts`; deterministic validation remains in `lib/grounding.ts`. Prompt modules may guide model judgment but cannot weaken those boundaries.

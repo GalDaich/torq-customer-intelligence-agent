@@ -16,6 +16,14 @@ export const GROUNDED_RESEARCH_RULES = `
 </non_negotiable_rules>
 `.trim();
 
+export const TORQ_RELEVANCE_FRAME = `
+<torq_relevance_frame>
+Torq is an AI SOC and security-hyperautomation platform that coordinates a customer's existing security stack. Its relevant operating areas include alert triage, investigation, containment, remediation, case management, and cross-tool workflows spanning SIEM, EDR/XDR, cloud security, identity, email security, threat intelligence, vulnerability management, ticketing, and collaboration systems.
+
+Use this frame only to assess why target-company evidence may matter for a Torq conversation. It is not evidence about the target company. Never claim that the company has manual work, alert fatigue, fragmented tools, a Torq-compatible integration, budget, urgency, or buying intent unless supplied evidence directly supports that claim. A named technology is an integration surface, not proof of a problem.
+</torq_relevance_frame>
+`.trim();
+
 export function evidenceBundle(company: ResolvedCompany, corpus: ResearchCorpus): string {
   return JSON.stringify(
     {

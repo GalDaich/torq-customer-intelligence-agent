@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { GroundedClaim, HiringSignal } from "./schemas";
+import type { GroundedClaim, HiringSignal, TechnologySignal } from "./schemas";
 import {
   retainEvidenceForClaims,
   retainStrongHiringEvidence,
+  retainStrongTechnologyEvidence,
   type EvidenceCorpus,
 } from "./evidence-quality";
 
@@ -86,5 +87,55 @@ describe("node evidence selection", () => {
     expect(() => retainEvidenceForClaims(hiringCorpus(), [claim])).toThrow(
       "unknown evidence E404",
     );
+  });
+});
+
+describe("technology evidence selection", () => {
+  const corpus: EvidenceCorpus = {
+    sources: [{
+      id: "TEC-S1",
+      title: "Security Engineer",
+      url: "https://acme.example/jobs/security-engineer-123",
+      publisher: "acme.example",
+      sourceType: "technology",
+      publishedAt: null,
+    }],
+    evidence: [{
+      id: "TEC-E1",
+      sourceId: "TEC-S1",
+      excerpt: "The role uses Splunk for security monitoring.",
+      collectedAt,
+    }],
+  };
+  const signal: TechnologySignal = {
+    technology: "Splunk",
+    category: "siem",
+    claim: {
+      text: "Acme uses Splunk for security monitoring.",
+      evidenceIds: ["TEC-E1"],
+      confidence: "high",
+    },
+    torqRelevance: {
+      text: "Splunk is a potential alert-ingestion and response orchestration surface.",
+      evidenceIds: ["TEC-E1"],
+      confidence: "medium",
+    },
+  };
+
+  it("retains one shared strong evidence record per named technology", () => {
+    expect(retainStrongTechnologyEvidence(corpus, [signal])).toEqual(corpus);
+  });
+
+  it("rejects duplicate technologies and mismatched relevance evidence", () => {
+    expect(() => retainStrongTechnologyEvidence(corpus, [signal, { ...signal, technology: "splunk" }]))
+      .toThrow("selected more than once");
+    expect(() => retainStrongTechnologyEvidence(corpus, [{
+      ...signal,
+      torqRelevance: { ...signal.torqRelevance, evidenceIds: ["TEC-E2"] },
+    }])).toThrow("one shared evidence record");
+    expect(() => retainStrongTechnologyEvidence(corpus, [{
+      ...signal,
+      technology: "Splunk and CrowdStrike",
+    }])).toThrow("exactly one technology");
   });
 });

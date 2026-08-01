@@ -16,6 +16,7 @@ ${GROUNDED_RESEARCH_RULES}
 - One underlying event equals one signal, even when search returns multiple publishers or syndicated copies.
 - Prefer the original company announcement; otherwise use the most authoritative dated article.
 - Do not infer that an event is recent when the supplied evidence lacks a usable date or clear recency context.
+- Prefer events that can change operational scale or complexity—funding, acquisitions, expansion, leadership changes, product launches, and major partnerships—without inventing a security impact.
 </task>
 
 Silently check specificity, recency, uniqueness, and evidence IDs before returning only the structured output.

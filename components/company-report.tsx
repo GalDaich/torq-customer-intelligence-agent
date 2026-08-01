@@ -55,6 +55,7 @@ type ReportSectionId =
   | "recent"
   | "hiring"
   | "security"
+  | "technology"
   | "pain-points"
   | "talking-points"
   | "confidence"
@@ -193,6 +194,28 @@ export function CompanyReport({ report }: { report: CompanyReportData }) {
                     <div className="why-it-matters">
                       <span>Why it matters</span>
                       <GroundedClaimText claim={signal.whyItMatters} report={report} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ReportAccordionSection>
+
+        <ReportAccordionSection {...sectionProps("technology", "Technology & integration signals")}>
+          <div className="report-section">
+            {report.technologySignals.length === 0 ? (
+              <EmptyEvidence>No specific technology-stack signals were supported.</EmptyEvidence>
+            ) : (
+              <ul className="signal-list">
+                {report.technologySignals.map((signal) => (
+                  <li key={`${signal.category}-${signal.technology}`}>
+                    <span className="category-label">{signal.category.replaceAll("_", " ")}</span>
+                    <strong>{signal.technology}</strong>
+                    <GroundedClaimText claim={signal.claim} report={report} />
+                    <div className="why-it-matters">
+                      <span>Torq relevance</span>
+                      <GroundedClaimText claim={signal.torqRelevance} report={report} />
                     </div>
                   </li>
                 ))}

@@ -4,9 +4,10 @@ import type {
   RecentSignals,
   ResolvedCompany,
   SecuritySignals,
+  TechnologySignals,
 } from "../lib/schemas";
 import type { ResearchCorpus } from "../lib/tools";
-import { GROUNDED_RESEARCH_RULES } from "./shared";
+import { GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
 const SYSTEM_PROMPT = `
 <role>
@@ -15,14 +16,18 @@ You write a concise, evidence-grounded customer intelligence report for a Torq a
 
 ${GROUNDED_RESEARCH_RULES}
 
+${TORQ_RELEVANCE_FRAME}
+
 <task>
 - Use classified findings as a shortlist, but independently verify every final claim against the supplied evidence.
 - Do not reintroduce a weak, generic, stale, unsupported, or duplicate item that a research node omitted.
 - Represent each underlying event, job, or security fact once in its reporting category.
 - Preserve exactly one strongest evidence citation for each hiring role.
 - Derive likely pain points cautiously and label uncertainty through confidence and gaps.
-- Write talking points as specific, natural conversation openers tied to evidence—not generic Torq pitches or asserted customer needs.
-- Keep confidence and gaps candid, concrete, and non-empty.
+- Return 1–3 likely pain points as explicitly evidence-backed hypotheses relevant to security automation. Do not present a hypothesis as a known internal problem.
+- Return exactly 2–3 specific, natural first-call talking points tied to target-company evidence—not generic Torq pitches or asserted customer needs.
+- Use technology signals to identify credible integration or orchestration surfaces, but never treat the presence of one tool as proof of fragmentation, manual work, or replacement intent.
+- Consolidate the supplied retrieval and extraction limitations into 1–6 candid, concrete, non-repetitive confidence-and-gap bullets. Keep only what a human should verify before acting.
 </task>
 
 Silently audit the report for unsupported claims, duplicate findings, generic evidence, and invalid evidence IDs. Return only the structured output.
@@ -36,6 +41,7 @@ export function synthesisMessages(input: {
     recentSignals: RecentSignals;
     hiringSignals: HiringSignals;
     securitySignals: SecuritySignals;
+    technologySignals: TechnologySignals;
   };
   nodeGaps: string[];
 }) {

@@ -48,6 +48,35 @@ const FirecrawlResponseSchema = z
   })
   .passthrough();
 
+const FirecrawlMapResponseSchema = z
+  .object({
+    success: z.boolean(),
+    links: z.array(
+      z.object({
+        url: z.string().url(),
+        title: z.string().catch(""),
+        description: z.string().catch(""),
+      }).passthrough(),
+    ),
+  })
+  .passthrough();
+
+export type TavilySearchInput = {
+  query: string;
+  idPrefix: string;
+  sourceType: Source["sourceType"];
+  maxResults?: number;
+  topic?: "general" | "news";
+  searchDepth?: "basic" | "advanced" | "fast" | "ultra-fast";
+  chunksPerSource?: 1 | 2 | 3;
+  timeRange?: "day" | "week" | "month" | "year";
+  includeDomains?: string[];
+  excludeDomains?: string[];
+  minimumScore?: number;
+};
+
+export type FirecrawlMapLink = z.infer<typeof FirecrawlMapResponseSchema>["links"][number];
+
 export type ResearchCorpus = {
   sources: Source[];
   evidence: Evidence[];
@@ -135,15 +164,7 @@ async function providerJson(
 }
 
 export async function searchTavily(
-  input: {
-    query: string;
-    idPrefix: string;
-    sourceType: Source["sourceType"];
-    maxResults?: number;
-    topic?: "general" | "news";
-    days?: number;
-    includeDomains?: string[];
-  },
+  input: TavilySearchInput,
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
   const apiKey = options.apiKey ?? requireServerEnv("TAVILY_API_KEY");
@@ -159,12 +180,16 @@ export async function searchTavily(
       body: JSON.stringify({
         query: input.query,
         topic: input.topic ?? "general",
-        search_depth: "basic",
+        search_depth: input.searchDepth ?? "basic",
         max_results: input.maxResults ?? 5,
         include_answer: false,
         include_raw_content: false,
-        ...(input.days ? { days: input.days } : {}),
+        ...(input.searchDepth === "advanced" && input.chunksPerSource
+          ? { chunks_per_source: input.chunksPerSource }
+          : {}),
+        ...(input.timeRange ? { time_range: input.timeRange } : {}),
         ...(input.includeDomains ? { include_domains: input.includeDomains } : {}),
+        ...(input.excludeDomains ? { exclude_domains: input.excludeDomains } : {}),
       }),
     },
     options.fetchImpl ?? fetch,
@@ -181,6 +206,13 @@ export async function searchTavily(
   const seenUrls = new Set<string>();
 
   for (const result of parsed.data.results) {
+    if (
+      input.minimumScore !== undefined &&
+      result.score !== undefined &&
+      result.score < input.minimumScore
+    ) {
+      continue;
+    }
     const canonicalUrl = canonicalEvidenceUrl(result.url);
     if (seenUrls.has(canonicalUrl)) continue;
     if (isGenericEvidenceSource({
@@ -202,7 +234,11 @@ export async function searchTavily(
     });
     sources.push(source);
 
-    const excerpt = result.content.replace(/\s+/g, " ").trim().slice(0, 1200);
+    const excerpt = result.content
+      .replace(/<\/?chunk\s*\d*>/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 1600);
     if (excerpt) {
       evidence.push(
         EvidenceSchema.parse({
@@ -216,6 +252,43 @@ export async function searchTavily(
   }
 
   return { sources, evidence };
+}
+
+export async function mapFirecrawl(
+  input: {
+    url: string;
+    search: string;
+    limit?: number;
+  },
+  options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
+): Promise<FirecrawlMapLink[]> {
+  const apiKey = options.apiKey ?? requireServerEnv("FIRECRAWL_API_KEY");
+  const payload = await providerJson(
+    "Firecrawl",
+    "https://api.firecrawl.dev/v2/map",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: input.url,
+        search: input.search,
+        sitemap: "include",
+        includeSubdomains: false,
+        ignoreQueryParameters: true,
+        limit: input.limit ?? 8,
+        timeout: 30_000,
+      }),
+    },
+    options.fetchImpl ?? fetch,
+  );
+  const parsed = FirecrawlMapResponseSchema.safeParse(payload);
+  if (!parsed.success || !parsed.data.success) {
+    throw new ProviderError("Firecrawl", "Firecrawl could not map the official website.");
+  }
+  return parsed.data.links;
 }
 
 function markdownExcerpts(markdown: string): string[] {
@@ -233,6 +306,7 @@ export async function scrapeFirecrawl(
     url: string;
     idPrefix: string;
     sourceType: Source["sourceType"];
+    maxAge?: number;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
@@ -250,8 +324,11 @@ export async function scrapeFirecrawl(
         url: input.url,
         formats: ["markdown"],
         onlyMainContent: true,
+        onlyCleanContent: false,
         removeBase64Images: true,
         blockAds: true,
+        excludeTags: ["nav", "footer", "aside", "form"],
+        maxAge: input.maxAge ?? 86_400_000,
       }),
     },
     options.fetchImpl ?? fetch,
@@ -290,6 +367,7 @@ export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
   const evidence: Evidence[] = [];
   const seenUrls = new Set<string>();
   const seenEvidence = new Set<string>();
+  const sourceIdByUrl = new Map<string, string>();
 
   for (const corpus of corpora) {
     const evidenceBySource = new Map<string, Evidence[]>();
@@ -301,7 +379,7 @@ export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
 
     for (const source of corpus.sources) {
       const canonicalUrl = canonicalEvidenceUrl(source.url);
-      if (seenUrls.has(canonicalUrl)) continue;
+      const retainedSourceId = sourceIdByUrl.get(canonicalUrl) ?? source.id;
 
       const uniqueEvidence = (evidenceBySource.get(source.id) ?? []).filter((item) => {
         const fingerprint = evidenceFingerprint(item.excerpt);
@@ -311,9 +389,12 @@ export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {
       });
       if (uniqueEvidence.length === 0) continue;
 
-      seenUrls.add(canonicalUrl);
-      sources.push({ ...source, url: canonicalUrl, publisher: publisherFor(canonicalUrl) });
-      evidence.push(...uniqueEvidence);
+      if (!seenUrls.has(canonicalUrl)) {
+        seenUrls.add(canonicalUrl);
+        sourceIdByUrl.set(canonicalUrl, source.id);
+        sources.push({ ...source, url: canonicalUrl, publisher: publisherFor(canonicalUrl) });
+      }
+      evidence.push(...uniqueEvidence.map((item) => ({ ...item, sourceId: retainedSourceId })));
     }
   }
 
