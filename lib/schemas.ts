@@ -52,7 +52,7 @@ export const CompanyResolutionSchema = z
     researchId: z.string().uuid(),
     inputName: z.string().min(1),
     status: z.enum(["unique", "ambiguous", "not_found"]),
-    candidates: z.array(CompanyCandidateSchema),
+    candidates: z.array(CompanyCandidateSchema).max(4),
     sources: z.array(SourceSchema),
     gaps: z.array(z.string()),
   })

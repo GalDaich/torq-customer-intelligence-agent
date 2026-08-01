@@ -47,9 +47,14 @@ describe("dedicated prompt modules", () => {
       sourceIds: ["S1"],
     };
     const prompt = systemPrompt(companyIdentityNormalizationMessages("Acme", [candidate]));
+    const messages = companyIdentityNormalizationMessages("Acme", [candidate]);
 
     expect(prompt).toContain("untrusted data");
     expect(prompt).toContain("exactly matches the input set");
+    expect(prompt).toContain("primary official website");
+    expect(prompt).toContain("Prefer google.com for Google");
+    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(2);
+    expect(messages.at(-1)?.content).toContain('"submittedInput": "Acme"');
   });
 
   it("gives every research prompt strong-evidence and deduplication rules", () => {

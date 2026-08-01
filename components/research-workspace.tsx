@@ -1,13 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import {
+  companyFromManualWebsite,
+  everyResolutionDecided,
+  selectedCompaniesFromDecisions,
+  type ResolutionDecision,
+  type SelectedCompany,
+} from "@/lib/company-selection";
 import {
   ResolveResponseSchema,
   type CompanyReport as CompanyReportData,
   type CompanyResolution,
   type ResearchProgressEvent,
   type ResearchResponse,
-  type ResolvedCompany,
 } from "@/lib/schemas";
 import { readResearchStream } from "@/lib/research-stream";
 import { CompanyResolutionList } from "./company-resolution";
@@ -16,11 +22,6 @@ import { ReportLaunchCard } from "./report-launchpad";
 import { ResearchProgress } from "./research-progress";
 
 type Phase = "input" | "resolving" | "resolution" | "researching" | "results";
-
-type SelectedCompany = {
-  researchId: string;
-  company: ResolvedCompany;
-};
 
 async function postJson(url: string, body: unknown): Promise<unknown> {
   const response = await fetch(url, {
@@ -43,39 +44,16 @@ export function ResearchWorkspace() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("input");
   const [resolutions, setResolutions] = useState<CompanyResolution[]>([]);
-  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [decisions, setDecisions] = useState<Record<string, ResolutionDecision>>({});
   const [reports, setReports] = useState<CompanyReportData[]>([]);
   const [failures, setFailures] = useState<ResearchResponse["failures"]>([]);
   const [progressEvents, setProgressEvents] = useState<ResearchProgressEvent[]>([]);
   const [activeCompanies, setActiveCompanies] = useState<SelectedCompany[]>([]);
   const [error, setError] = useState("");
 
-  const selectedCompanies = useMemo(
-    () =>
-      resolutions.flatMap((resolution) => {
-        const candidate = resolution.candidates.find(
-          (item) => item.id === selections[resolution.researchId],
-        );
-        if (!candidate?.domain || !candidate.websiteUrl) return [];
-        return [
-          {
-            researchId: resolution.researchId,
-            company: {
-              inputName: resolution.inputName,
-              name: candidate.name,
-              domain: candidate.domain,
-              websiteUrl: candidate.websiteUrl,
-              description: candidate.description,
-            },
-          },
-        ];
-      }),
-    [resolutions, selections],
-  );
-  const unresolvedAmbiguity = resolutions.some(
-    (resolution) =>
-      resolution.status === "ambiguous" && !selections[resolution.researchId],
-  );
+  const selectedCompanies = selectedCompaniesFromDecisions(resolutions, decisions);
+  const allCompaniesDecided = everyResolutionDecided(resolutions, decisions);
+  const pendingDecisions = resolutions.filter((resolution) => !decisions[resolution.researchId]).length;
 
   function updateCompanies(next: string[]) {
     setCompanies(next);
@@ -95,37 +73,9 @@ export function ResearchWorkspace() {
       const payload = ResolveResponseSchema.parse(
         await postJson("/api/resolve", { companies }),
       );
-      const automaticSelections = Object.fromEntries(
-        payload.resolutions.flatMap((resolution) =>
-          resolution.status === "unique" && resolution.candidates[0]
-            ? [[resolution.researchId, resolution.candidates[0].id]]
-            : [],
-        ),
-      );
-      const automaticCompanies: SelectedCompany[] = payload.resolutions.flatMap((resolution) => {
-        const candidate = resolution.candidates.find(
-          (item) => item.id === automaticSelections[resolution.researchId],
-        );
-        if (!candidate?.domain || !candidate.websiteUrl) return [];
-        return [{
-          researchId: resolution.researchId,
-          company: {
-            inputName: resolution.inputName,
-            name: candidate.name,
-            domain: candidate.domain,
-            websiteUrl: candidate.websiteUrl,
-            description: candidate.description,
-          },
-        }];
-      });
       setResolutions(payload.resolutions);
-      setSelections(automaticSelections);
-      const allUnique = payload.resolutions.every((resolution) => resolution.status === "unique");
-      if (allUnique && automaticCompanies.length === payload.resolutions.length) {
-        await startResearch(automaticCompanies);
-      } else {
-        setPhase("resolution");
-      }
+      setDecisions({});
+      setPhase("resolution");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Company resolution failed.");
       setPhase("input");
@@ -156,14 +106,14 @@ export function ResearchWorkspace() {
   }
 
   async function researchCompanies() {
-    if (selectedCompanies.length === 0 || unresolvedAmbiguity) return;
+    if (selectedCompanies.length === 0 || !allCompaniesDecided) return;
     await startResearch(selectedCompanies);
   }
 
   function editCompanies() {
     setPhase("input");
     setResolutions([]);
-    setSelections({});
+    setDecisions({});
     setReports([]);
     setFailures([]);
     setProgressEvents([]);
@@ -196,7 +146,7 @@ export function ResearchWorkspace() {
         <div className="action-row">
           {phase === "input" || phase === "resolving" ? (
             <button className="primary-button" type="button" disabled={busy} onClick={resolveCompanies}>
-              {phase === "resolving" ? "Finding companies…" : "Research companies"}
+              {phase === "resolving" ? "Finding official websites…" : "Find company websites"}
             </button>
           ) : (
             <button className="secondary-button" type="button" disabled={busy} onClick={editCompanies}>
@@ -211,24 +161,56 @@ export function ResearchWorkspace() {
         <>
           <CompanyResolutionList
             resolutions={resolutions}
-            selections={selections}
+            decisions={decisions}
             onSelect={(researchId, candidateId) =>
-              setSelections((current) => ({ ...current, [researchId]: candidateId }))
+              setDecisions((current) => ({
+                ...current,
+                [researchId]: { kind: "candidate", candidateId },
+              }))
             }
+            onDiscard={(researchId) =>
+              setDecisions((current) => ({
+                ...current,
+                [researchId]: { kind: "discarded" },
+              }))
+            }
+            onRestore={(researchId) =>
+              setDecisions((current) => {
+                const next = { ...current };
+                delete next[researchId];
+                return next;
+              })
+            }
+            onManualWebsite={(researchId, website) => {
+              const resolution = resolutions.find((item) => item.researchId === researchId);
+              if (!resolution) return "Company resolution is no longer available.";
+              try {
+                const company = companyFromManualWebsite(resolution.inputName, website);
+                setDecisions((current) => ({
+                  ...current,
+                  [researchId]: { kind: "manual", company },
+                }));
+                return null;
+              } catch (caught) {
+                return caught instanceof Error ? caught.message : "Enter a valid company website.";
+              }
+            }}
           />
           <div className="floating-action">
             <div>
               <strong>{selectedCompanies.length} selected</strong>
               <span>
-                {unresolvedAmbiguity
-                  ? "Choose every ambiguous company to continue."
-                  : "The agent will build a separate intelligence report for each company."}
+                {pendingDecisions > 0
+                  ? `${pendingDecisions} ${pendingDecisions === 1 ? "company still needs" : "companies still need"} a decision.`
+                  : selectedCompanies.length === 0
+                    ? "Restore or select at least one company to continue."
+                    : "Every company is confirmed. Research will start only when you continue."}
               </span>
             </div>
             <button
               className="primary-button"
               type="button"
-              disabled={selectedCompanies.length === 0 || unresolvedAmbiguity}
+              disabled={selectedCompanies.length === 0 || !allCompaniesDecided}
               onClick={researchCompanies}
             >
               Research selected companies

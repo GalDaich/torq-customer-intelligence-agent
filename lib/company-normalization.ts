@@ -60,15 +60,11 @@ export function applyCandidateNormalizations(
     );
   }
 
-  const normalizedById = new Map(
-    parsed.candidates.map((candidate) => [candidate.candidateId, candidate]),
-  );
-  return candidates.map((candidate) => {
-    const normalized = normalizedById.get(candidate.id);
-    if (!normalized) {
-      throw new ProtectedBoundaryError(
-        "Company identity normalization omitted a discovered candidate.",
-      );
+  const discoveredById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  return parsed.candidates.map((normalized) => {
+    const candidate = discoveredById.get(normalized.candidateId);
+    if (!candidate) {
+      throw new ProtectedBoundaryError("Company identity normalization invented a candidate.");
     }
     return {
       ...candidate,

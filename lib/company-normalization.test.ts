@@ -33,6 +33,35 @@ describe("company identity normalization", () => {
     });
   });
 
+  it("uses model output order to rank candidates while retaining discovered URLs", () => {
+    const secondary: CompanyCandidate = {
+      ...candidate,
+      id: "research:C2",
+      name: "About monday.com",
+      domain: "about.monday.com",
+      websiteUrl: "https://about.monday.com",
+      sourceIds: ["RES-S2"],
+    };
+    const normalized = applyCandidateNormalizations([secondary, candidate], {
+      candidates: [
+        {
+          candidateId: candidate.id,
+          companyName: "monday.com",
+          description: "monday.com provides a work management platform.",
+        },
+        {
+          candidateId: secondary.id,
+          companyName: "monday.com",
+          description: "This site contains information about monday.com.",
+        },
+      ],
+    });
+
+    expect(normalized.map((item) => item.id)).toEqual([candidate.id, secondary.id]);
+    expect(normalized[0].websiteUrl).toBe("https://monday.com");
+    expect(normalized[1].websiteUrl).toBe("https://about.monday.com");
+  });
+
   it("rejects missing, duplicate, or invented candidate references", () => {
     expect(() =>
       applyCandidateNormalizations([candidate], {

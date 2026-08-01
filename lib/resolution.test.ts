@@ -38,6 +38,43 @@ describe("domain input", () => {
 });
 
 describe("candidate discovery", () => {
+  it("ranks the primary .com homepage ahead of secondary brand domains", () => {
+    const candidates = candidatesFromCorpus("google", researchId, {
+      sources: [
+        {
+          id: "RES-S1",
+          title: "About Google",
+          url: "https://about.google",
+          publisher: "about.google",
+          sourceType: "other",
+          publishedAt: null,
+        },
+        {
+          id: "RES-S2",
+          title: "Google",
+          url: "https://google.com",
+          publisher: "google.com",
+          sourceType: "other",
+          publishedAt: null,
+        },
+        {
+          id: "RES-S3",
+          title: "Google Cloud",
+          url: "https://cloud.google.com",
+          publisher: "cloud.google.com",
+          sourceType: "other",
+          publishedAt: null,
+        },
+      ],
+      evidence: [],
+    });
+
+    expect(candidates[0].domain).toBe("google.com");
+    expect(candidates.map((candidate) => candidate.domain)).toEqual(
+      expect.arrayContaining(["about.google", "cloud.google.com"]),
+    );
+  });
+
   it("groups official-site results and excludes publisher profiles", () => {
     const candidates = candidatesFromCorpus("Acme", researchId, {
       sources: [
@@ -147,7 +184,7 @@ describe("candidate discovery", () => {
     ]);
   });
 
-  it("automatically resolves a single plausible name among unrelated results", async () => {
+  it("marks a single plausible name as unique without authorizing research", async () => {
     const search = async () => ({
       sources: [
         {
@@ -174,6 +211,19 @@ describe("candidate discovery", () => {
     expect(resolution.status).toBe("unique");
     expect(resolution.candidates).toHaveLength(1);
     expect(resolution.candidates[0].domain).toBe("rapid7.com");
+  });
+
+  it("searches specifically for the primary official company homepage", async () => {
+    let searchInput: { query: string; maxResults?: number } | undefined;
+    const search = async (input: { query: string; maxResults?: number }) => {
+      searchInput = input;
+      return { sources: [], evidence: [] };
+    };
+
+    await resolveCompanyName("Google", search, preserveCandidates);
+
+    expect(searchInput?.query).toBe('"Google" official company homepage primary website');
+    expect(searchInput?.maxResults).toBe(10);
   });
 
   it("uses normalized identity text instead of a raw page title", async () => {

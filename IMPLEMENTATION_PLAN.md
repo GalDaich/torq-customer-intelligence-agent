@@ -9,7 +9,7 @@ Completed locally:
 - Tavily and Firecrawl normalization wrappers.
 - Four parallel research nodes, LLM synthesis, and deterministic final validation.
 - Per-company UUID, LangGraph `thread_id`, LangSmith metadata, graph trace tags, and pre-graph identity-normalization tracing.
-- Tavily-backed name/domain resolution, strict LLM identity normalization, automatic unique matches, explicit ambiguity selection, independent batch execution, and partial failures.
+- Tavily-backed primary-homepage discovery, few-shot LLM identity ranking and normalization, mandatory per-company confirmation/manual entry/discard, independent batch execution, and partial failures.
 - LangGraph task-event streaming with an event-driven progress bar and no browser activity log.
 - LangSmith tracing for pre-graph identity normalization, graph execution, and LLM calls; no application-owned structured logging.
 - Torq-inspired responsive browser UI with a completed-report launchpad, company-named report tabs, single-open report accordions, source badges, and visible gaps.
@@ -32,8 +32,8 @@ Build a local-first Level 1 Customer Intelligence Agent for Torq's AI Solutions 
 The product must let a non-technical account executive or CSM:
 
 1. Enter one to five company names or domains using removable tags.
-2. Continue automatically when public search produces one plausible identity or an exact domain match.
-3. Select the correct company only when multiple plausible matches are found.
+2. Review up to four ranked official-website candidates for every company.
+3. Confirm a candidate, enter the official website manually, or discard the company before any report can start.
 4. Run grounded company research.
 5. Read a concise, useful report with clickable supporting sources.
 
@@ -57,7 +57,7 @@ The first milestone is local execution and behavioral verification. Deployment t
 - Tag-based company name or domain input.
 - Maximum of five companies per research request.
 - Public web search for company identity resolution.
-- Human selection for ambiguous company matches.
+- Mandatory human confirmation for every company match, with manual website entry and discard alternatives.
 - Separate LangGraph research nodes for:
   - First-party company context.
   - Recent news, funding, product, and leadership signals.
@@ -92,9 +92,9 @@ The UUID and graph state should be shaped so persistence can be added later, but
 ```text
 Company tags
     -> POST /api/resolve
-    -> Exact-domain or plausible-name candidate grouping
-    -> LLM normalizes candidate name and description under fixed ID/domain/URL controls
-    -> Auto-continue for unique matches; user selects ambiguous matches
+    -> Primary official-homepage search and up-to-four candidate grouping
+    -> Few-shot LLM ranks and normalizes candidates under fixed ID/domain/URL controls
+    -> User confirms a candidate, enters a website manually, or discards each company
     -> POST /api/research
     -> Stream actual LangGraph task events
     -> One LangGraph execution per company
@@ -102,7 +102,7 @@ Company tags
     -> One report per company
 ```
 
-The resolution step is an explicit human-in-the-loop product interaction. For Level 1, the browser holds the candidate selection between the two API requests. LangGraph's durable interrupt/checkpointer flow is deferred because it would add persistence infrastructure that the current scope does not require.
+The resolution step is an explicit human-in-the-loop product interaction and a hard gate before research. A `unique` status describes search confidence only; it never authorizes an automatic graph run. For Level 1, the browser holds candidate, manual-site, and discard decisions between the two API requests. LangGraph's durable interrupt/checkpointer flow is deferred because it would add persistence infrastructure that the current scope does not require.
 
 ## Technology choices
 
@@ -398,11 +398,12 @@ Behavior:
 - Trim and deduplicate inputs.
 - Generate one `researchId` per submitted company.
 - For a domain, constrain discovery to that domain and group root/subdomain results.
-- For a name, retain plausible normalized name/domain-stem matches.
+- For a name, search specifically for the primary official homepage and retain up to four plausible normalized name/domain-stem matches.
 - Send only plausible candidates through strict structured-output identity normalization.
-- Let the model rewrite only `name` and `description`; retain candidate ID, domain, website URL, and source IDs deterministically.
+- Few-shot the model to rank likely primary official domains first and rewrite only `name` and `description`; retain candidate ID, domain, website URL, and source IDs deterministically.
 - Reject failed normalization, missing/duplicate candidate IDs, and invented candidate references instead of using raw page-title text.
 - Mark one plausible match as `unique`; mark multiple plausible matches as `ambiguous`.
+- Require an explicit candidate, manual website, or discard decision for every submitted company before enabling research.
 - Return `CompanyResolution[]`.
 
 Response:
@@ -715,7 +716,8 @@ Use a system-safe sans font stack unless an approved Torq font asset becomes ava
 ### Single-company smoke test
 
 - Enter one known company.
-- Confirm one resolution result.
+- Confirm its primary official homepage is ranked first.
+- Confirm research remains paused until the candidate is explicitly selected.
 - Generate one report.
 - Confirm one UUID.
 - Confirm one LangSmith trace.
@@ -728,6 +730,12 @@ Use a system-safe sans font stack unless an approved Torq font asset becomes ava
 - Confirm multiple candidates appear.
 - Select one candidate.
 - Confirm only the selected company reaches the research graph.
+
+### Manual-or-discard test
+
+- Use a name with no confident match.
+- Confirm a valid manually entered website becomes the selected company.
+- Confirm discarding a company marks it decided without sending it to the research graph.
 
 ### Five-company test
 
@@ -760,7 +768,8 @@ Add tests only around behavior that protects the contracts:
 - Source/evidence ID integrity.
 - Company-resolution status handling.
 - Exact-domain resolution, unique plausible-name resolution, and ambiguous partial-name handling.
-- LLM identity normalization with immutable candidate references and a raw-title regression case.
+- Primary-homepage ranking, mandatory confirmation, manual-site validation, and discard handling.
+- Few-shot LLM identity ranking with immutable candidate references and a raw-title regression case.
 - Partial batch failure handling.
 - One-company/one-research-ID execution.
 - Fragmented newline-delimited progress stream parsing.
@@ -791,7 +800,7 @@ The local milestone is complete when:
 - The app runs from a clean checkout with documented commands.
 - A non-technical user can complete the full flow without instructions.
 - One to five company names or domains can be entered as tags.
-- Unique matches continue automatically and ambiguous names require explicit selection.
+- Every company requires an explicit candidate, manual-site, or discard decision before research starts.
 - Every report claim is evidence-backed.
 - Every report contains clickable source links.
 - Five companies produce five reports, five UUIDs, and five traces.

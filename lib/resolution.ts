@@ -74,6 +74,23 @@ function nameMatches(candidate: CompanyCandidate, inputName: string): boolean {
   );
 }
 
+function officialWebsiteScore(candidate: CompanyCandidate, inputName: string): number {
+  const inputDomain = domainFromInput(inputName);
+  if (inputDomain && domainMatches(candidate.domain, inputDomain)) return 1_000;
+
+  const inputKey = comparisonKey(inputName);
+  const nameKey = comparisonKey(candidate.name);
+  const domain = candidate.domain ?? "";
+  const domainStem = comparisonKey(domain.split(".")[0] ?? "");
+  let score = 0;
+  if (domain === `${inputKey}.com`) score += 500;
+  if (domainStem === inputKey) score += 400;
+  if (nameKey === inputKey) score += 300;
+  if (nameKey.startsWith(inputKey)) score += 150;
+  score -= Math.max(0, domain.split(".").length - 2) * 25;
+  return score;
+}
+
 export function candidatesFromCorpus(
   inputName: string,
   researchId: string,
@@ -105,7 +122,9 @@ export function candidatesFromCorpus(
     });
   }
 
-  return [...grouped.values()].slice(0, 4);
+  return [...grouped.values()]
+    .sort((left, right) => officialWebsiteScore(right, inputName) - officialWebsiteScore(left, inputName))
+    .slice(0, 4);
 }
 
 export async function resolveCompanyName(
@@ -117,11 +136,11 @@ export async function resolveCompanyName(
   const inputDomain = domainFromInput(inputName);
   const corpus = await search({
     query: inputDomain
-      ? `"${inputDomain}" official company website`
-      : `"${inputName}" company official website about`,
+      ? `"${inputDomain}" official company homepage primary website`
+      : `"${inputName}" official company homepage primary website`,
     idPrefix: "RES",
     sourceType: "other",
-    maxResults: 6,
+    maxResults: 10,
     ...(inputDomain ? { includeDomains: [inputDomain] } : {}),
   });
   const discovered = candidatesFromCorpus(inputName, researchId, corpus);

@@ -7,9 +7,9 @@ The implementation is complete through deterministic tests, production build, br
 ## What the product does
 
 1. Accepts one to five company names or domains as removable tags.
-2. Searches for plausible official company identities and prefers an exact domain match.
-3. Uses a strict LLM normalization step to turn raw page titles such as `Join monday.com` into a clean grounded identity such as `monday.com`.
-4. Continues automatically for a single match and requires human selection only when multiple plausible matches remain.
+2. Searches specifically for each company's primary official homepage and presents up to four ranked choices.
+3. Uses a few-shot, strict LLM normalization step to rank primary domains first and turn raw page titles such as `Join monday.com` into a clean grounded identity such as `monday.com`.
+4. Requires an explicit decision for every company: confirm a suggestion, enter the official website manually, or discard the company. Research never starts from normalization alone.
 5. Runs one independent LangGraph execution per selected company.
 6. Collects first-party, recent, hiring, and security evidence while rejecting generic index and careers pages.
 7. Uses an LLM to classify evidence and passes only node-selected lineage into final synthesis.
@@ -77,7 +77,7 @@ The four research nodes run in parallel. They use fixed search patterns or fixed
 
 Every LLM instruction lives in its own editable TypeScript module under `prompts/`. The graph and normalization code contain no inline system or user prompts.
 
-Before selection or automatic continuation, discovery candidates pass through one strict structured-output identity-normalization call. The model can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities. This pre-graph call has its own `normalize_company_identity` LangSmith run, normalization tags, and the same `research:<researchId>` correlation tag used by the later graph.
+Before user confirmation, discovery candidates pass through one strict structured-output identity-normalization call. A few-shot prompt ranks the most likely primary official homepage first and can rewrite only the candidate's display name and neutral description. Deterministic code requires exactly the discovered candidate IDs and retains their domains, website URLs, and source IDs unchanged. Invalid or failed normalization stops resolution; raw search-page titles are not silently used as final company identities. The browser never converts a `unique` resolver status into permission to research: every row needs an explicit candidate, manual-site, or discard decision. This pre-graph call has its own `normalize_company_identity` LangSmith run, normalization tags, and the same `research:<researchId>` correlation tag used by the later graph.
 
 For every company, `researchId` is preserved through resolution, selection, graph state, progress events, the final report, LangGraph `thread_id`, LangSmith metadata, and a `research:<researchId>` tag. Independent company runs execute concurrently with guarded outcomes, so one failure does not remove successful peers.
 
@@ -119,8 +119,9 @@ Five submitted companies should create five UUIDs and five independently searcha
 
 Once all credentials are populated, verify:
 
-- One known company resolves, researches, and renders with clickable claim badges.
+- One known company shows its official homepage first, remains paused until confirmation, then researches and renders with clickable claim badges.
 - An ambiguous company shows multiple candidates and blocks research until selection.
+- A missing match accepts a manually entered official website or can be discarded.
 - Five companies return five visible UUIDs and five LangSmith traces.
 - One deliberately failed company does not remove successful reports.
 - A company with weak public evidence shows gaps rather than invented certainty.
