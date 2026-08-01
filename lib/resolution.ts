@@ -180,9 +180,18 @@ export async function resolveCompanyName(
     : discovered.filter((candidate) => nameMatches(candidate, inputName));
   const candidates = plausible.length > 0 ? plausible : discovered;
   const normalizedCandidates = await normalize(inputName, candidates, { researchId });
-  const status = normalizedCandidates.length === 0
+  // A submitted domain already identifies the website. Search snippets can contain
+  // support copy or transient events, so keep this confirmation text deterministic and
+  // let the research graph describe the business from scraped first-party evidence.
+  const displayCandidates = inputDomain
+    ? normalizedCandidates.map((candidate) => ({
+        ...candidate,
+        description: `Official website for ${candidate.name}.`,
+      }))
+    : normalizedCandidates;
+  const status = displayCandidates.length === 0
     ? "not_found"
-    : normalizedCandidates.length === 1
+    : displayCandidates.length === 1
       ? "unique"
       : "ambiguous";
 
@@ -190,7 +199,7 @@ export async function resolveCompanyName(
     researchId,
     inputName,
     status,
-    candidates: normalizedCandidates,
+    candidates: displayCandidates,
     sources: corpus.sources,
     gaps: status === "not_found" ? ["No plausible official company website was found."] : [],
   });

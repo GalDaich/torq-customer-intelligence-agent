@@ -311,7 +311,7 @@ describe("candidate discovery", () => {
       name: "monday.com",
       domain: "monday.com",
       websiteUrl: "https://monday.com",
-      description: "monday.com is a work management platform.",
+      description: "Official website for monday.com.",
     });
   });
 });
