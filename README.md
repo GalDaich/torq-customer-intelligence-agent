@@ -9,6 +9,8 @@ Live demo: [torq-demo.galdaich.com](https://torq-demo.galdaich.com)
 - Accepts company names and finds likely official websites.
 - Waits for the user to confirm each company before spending research credits.
 - Researches company context, recent events, hiring, security signals, and named technologies.
+- Limits every evidence source to the exact one-year window calculated when the run starts.
+- Checks the company's own dated blog, newsroom, and press-release items for recent signals.
 - Produces a separate cited report for each company.
 - Shows missing or weak evidence as a gap instead of filling it with a generic answer.
 
@@ -48,7 +50,7 @@ npm start          # serve the production build
 
 I kept this submission to Level 1. There is no account system, database, watchlist, scheduled refresh, or change feed. Company selections live in the browser and disappear on refresh.
 
-The research flow uses bounded Tavily searches and targeted Firecrawl extraction. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to retrieved evidence and real source URLs.
+The research flow uses bounded Tavily searches and targeted Firecrawl extraction. Undated, older, and future sources are removed before they reach the model. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to in-window evidence and real source URLs.
 
 The two additional submission files are:
 

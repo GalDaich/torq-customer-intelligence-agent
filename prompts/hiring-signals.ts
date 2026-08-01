@@ -1,4 +1,5 @@
 import type { ResolvedCompany } from "../lib/schemas";
+import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
@@ -30,12 +31,16 @@ A valid hiring signal must name one exact role and be supported by one item-spec
 Silently check every role for specificity, current-state support, uniqueness, and exactly one strongest evidence ID. Return only the structured output.
 `.trim();
 
-export function hiringSignalMessages(company: ResolvedCompany, corpus: ResearchCorpus) {
+export function hiringSignalMessages(
+  company: ResolvedCompany,
+  corpus: ResearchCorpus,
+  researchWindow: ResearchWindow,
+) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
     },
   ];
 }

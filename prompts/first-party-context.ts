@@ -1,4 +1,5 @@
 import type { ResolvedCompany } from "../lib/schemas";
+import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES } from "./shared";
 
@@ -22,12 +23,16 @@ ${GROUNDED_RESEARCH_RULES}
 Silently check every evidence ID before returning only the structured output.
 `.trim();
 
-export function firstPartyMessages(company: ResolvedCompany, corpus: ResearchCorpus) {
+export function firstPartyMessages(
+  company: ResolvedCompany,
+  corpus: ResearchCorpus,
+  researchWindow: ResearchWindow,
+) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
     },
   ];
 }

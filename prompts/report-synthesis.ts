@@ -6,6 +6,7 @@ import type {
   SecuritySignals,
   TechnologySignals,
 } from "../lib/schemas";
+import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
@@ -38,6 +39,7 @@ Silently audit the report for unsupported claims, duplicate findings, generic ev
 
 export function synthesisMessages(input: {
   company: ResolvedCompany;
+  researchWindow: ResearchWindow;
   corpus: ResearchCorpus;
   classified: {
     firstPartyContext?: FirstPartyContext;
@@ -54,6 +56,7 @@ export function synthesisMessages(input: {
       role: "user" as const,
       content: JSON.stringify(
         {
+          researchWindow: input.researchWindow,
           company: input.company,
           classifiedFindings: input.classified,
           retrievalOrExtractionGaps: input.nodeGaps,

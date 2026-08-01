@@ -96,6 +96,36 @@ describe("grounding validation", () => {
     expect(validateGroundedReport(validReport())).toEqual(validReport());
   });
 
+  it("enforces the runtime evidence window at the final report boundary", () => {
+    const researchWindow = {
+      today: "2026-08-01",
+      oneYearAgo: "2025-08-01",
+    };
+    const current = validReport();
+    current.sources[0].publishedAt = "2026-01-10";
+    expect(validateGroundedReport(current, researchWindow)).toEqual(current);
+
+    const old = validReport();
+    old.sources[0].publishedAt = "2021-01-10";
+    expect(() => validateGroundedReport(old, researchWindow)).toThrow(
+      "Every source must be dated within 2025-08-01 through 2026-08-01.",
+    );
+  });
+
+  it("restores a report by omitting old or undated evidence", () => {
+    const restored = restoreGroundedReport(validReport(), {
+      today: "2026-08-01",
+      oneYearAgo: "2025-08-01",
+    });
+
+    expect(restored.whatTheyDo).toBeNull();
+    expect(restored.sources).toEqual([]);
+    expect(restored.evidence).toEqual([]);
+    expect(restored.confidenceAndGaps).toContain(
+      "Sources without a publication date from 2025-08-01 through 2026-08-01 were omitted.",
+    );
+  });
+
   it("accepts an evidence-free partial report with an explicit gap", () => {
     const report = validReport();
     report.whatTheyDo = null;

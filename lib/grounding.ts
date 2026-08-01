@@ -12,6 +12,12 @@ import {
   isGenericHiringSource,
   technologySignalsDescribeSameTechnology,
 } from "./evidence-quality";
+import {
+  filterCorpusToResearchWindow,
+  researchWindowLabel,
+  sourceIsWithinResearchWindow,
+  type ResearchWindow,
+} from "./research-window";
 
 // This is the final trust boundary. It validates model-authored reports against retrieved
 // lineage and can omit unsafe optional findings, but it never rewrites or invents claims.
@@ -59,12 +65,40 @@ function reportGaps(existing: string[], additions: string[]): string[] {
  * Restores a schema-valid synthesized report by omitting structurally unsafe optional findings.
  * It never rewrites claim text or invents evidence; every omission becomes a visible report gap.
  */
-export function restoreGroundedReport(input: unknown): CompanyReport {
-  const report = CompanyReportSchema.parse(input);
+export function restoreGroundedReport(
+  input: unknown,
+  researchWindow?: ResearchWindow,
+): CompanyReport {
+  const parsedReport = CompanyReportSchema.parse(input);
+  const windowedCorpus = researchWindow
+    ? filterCorpusToResearchWindow(
+        {
+          sources: parsedReport.sources,
+          evidence: parsedReport.evidence,
+        },
+        researchWindow,
+      )
+    : {
+        sources: parsedReport.sources,
+        evidence: parsedReport.evidence,
+      };
+  const report = CompanyReportSchema.parse({
+    ...parsedReport,
+    sources: windowedCorpus.sources,
+    evidence: windowedCorpus.evidence,
+  });
   const sourceIds = new Set(report.sources.map((source) => source.id));
   const sourceById = new Map(report.sources.map((source) => [source.id, source]));
   const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
   const omissions: string[] = [];
+  if (
+    researchWindow &&
+    windowedCorpus.sources.length !== parsedReport.sources.length
+  ) {
+    omissions.push(
+      `Sources without a publication date from ${researchWindowLabel(researchWindow)} were omitted.`,
+    );
+  }
 
   const whatTheyDo = report.whatTheyDo
     ? groundedClaim(report.whatTheyDo, evidenceById, sourceIds)
@@ -178,7 +212,7 @@ export function restoreGroundedReport(input: unknown): CompanyReport {
     talkingPoints,
     confidenceAndGaps: reportGaps(report.confidenceAndGaps, omissions),
   });
-  return validateGroundedReport(retainCitedLineage(restored));
+  return validateGroundedReport(retainCitedLineage(restored), researchWindow);
 }
 
 function uniqueIds(ids: string[], label: string): Set<string> {
@@ -200,7 +234,10 @@ export function retainCitedLineage(report: CompanyReport): CompanyReport {
   return CompanyReportSchema.parse({ ...report, sources, evidence });
 }
 
-export function validateGroundedReport(input: unknown): CompanyReport {
+export function validateGroundedReport(
+  input: unknown,
+  researchWindow?: ResearchWindow,
+): CompanyReport {
   // Validation is intentionally strict: every claim must resolve through evidence to one
   // real source, and role/technology findings must stay specific and non-duplicated.
   const report = CompanyReportSchema.parse(input);
@@ -214,6 +251,16 @@ export function validateGroundedReport(input: unknown): CompanyReport {
   );
   const sourceById = new Map(report.sources.map((source) => [source.id, source]));
   const evidenceById = new Map(report.evidence.map((evidence) => [evidence.id, evidence]));
+  if (
+    researchWindow &&
+    report.sources.some(
+      (source) => !sourceIsWithinResearchWindow(source.publishedAt, researchWindow),
+    )
+  ) {
+    throw new GroundingValidationError(
+      `Every source must be dated within ${researchWindowLabel(researchWindow)}.`,
+    );
+  }
   const canonicalUrls = report.sources.map((source) => canonicalEvidenceUrl(source.url));
   if (new Set(canonicalUrls).size !== canonicalUrls.length) {
     throw new GroundingValidationError("Sources must not repeat the same canonical URL.");

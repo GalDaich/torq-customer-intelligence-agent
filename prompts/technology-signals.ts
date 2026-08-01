@@ -1,4 +1,5 @@
 import type { ResolvedCompany } from "../lib/schemas";
+import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import {
   evidenceBundle,
@@ -35,12 +36,16 @@ A valid signal must name one specific technology, platform, or service and be su
 Silently check every technology for explicit naming, source specificity, uniqueness, bounded relevance, and exactly one strongest evidence ID. Return only the structured output.
 `.trim();
 
-export function technologySignalMessages(company: ResolvedCompany, corpus: ResearchCorpus) {
+export function technologySignalMessages(
+  company: ResolvedCompany,
+  corpus: ResearchCorpus,
+  researchWindow: ResearchWindow,
+) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
     },
   ];
 }

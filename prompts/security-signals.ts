@@ -1,4 +1,5 @@
 import type { ResolvedCompany } from "../lib/schemas";
+import type { ResearchWindow } from "../lib/research-window";
 import type { ResearchCorpus } from "../lib/tools";
 import { evidenceBundle, GROUNDED_RESEARCH_RULES, TORQ_RELEVANCE_FRAME } from "./shared";
 
@@ -25,12 +26,16 @@ ${TORQ_RELEVANCE_FRAME}
 Silently check specificity, uniqueness, inference boundaries, and evidence IDs before returning only the structured output.
 `.trim();
 
-export function securitySignalMessages(company: ResolvedCompany, corpus: ResearchCorpus) {
+export function securitySignalMessages(
+  company: ResolvedCompany,
+  corpus: ResearchCorpus,
+  researchWindow: ResearchWindow,
+) {
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `<evidence_bundle>\n${evidenceBundle(company, corpus)}\n</evidence_bundle>`,
+      content: `<evidence_bundle>\n${evidenceBundle(company, corpus, researchWindow)}\n</evidence_bundle>`,
     },
   ];
 }

@@ -40,9 +40,16 @@ import {
   hiringSignalSearchPlan,
   recentSignalSearchPlan,
   securitySignalSearchPlan,
+  selectRecentFirstPartyUrls,
   technologySignalSearchPlan,
   type FocusedSearchPlan,
 } from "./research-plans";
+import {
+  createResearchWindow,
+  researchWindowLabel,
+  ResearchWindowSchema,
+  type ResearchWindow,
+} from "./research-window";
 import {
   assertResearchEnvironment,
   isProviderClientError,
@@ -96,6 +103,7 @@ const ResearchState = new StateSchema({
   // evidence and gap lists are combined.
   researchId: z.string().uuid(),
   company: ResolvedCompanySchema,
+  researchWindow: ResearchWindowSchema,
   firstPartyCorpus: ResearchCorpusSchema.optional(),
   firstPartyResult: FirstPartyContextSchema.optional(),
   firstPartyGaps: z.array(z.string()).optional(),
@@ -218,13 +226,17 @@ function model() {
   });
 }
 
-async function scrapeFirstParty(company: ResolvedCompany): Promise<{
+async function scrapeFirstParty(
+  company: ResolvedCompany,
+  researchWindow: ResearchWindow,
+): Promise<{
   corpus: ResearchCorpus;
   gaps: string[];
 }> {
   // The confirmed origin is always scraped; mapping may add at most two focused company,
   // product, platform, solution, or about pages from the same host.
   const origin = new URL(company.websiteUrl).origin;
+  const officialHost = new URL(origin).hostname.replace(/^www\./, "");
   const gaps: string[] = [];
   let mappedLinks: Awaited<ReturnType<typeof mapFirecrawl>> = [];
   try {
@@ -241,7 +253,6 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
   }
 
   const blockedPath = /\/(blog|news|press|careers?|jobs?|events?|resources?|privacy|terms|legal|login|contact|demo)(\/|$)/i;
-  const officialHost = new URL(origin).hostname.replace(/^www\./, "");
   const targetUrls = [
     origin,
     ...mappedLinks
@@ -264,6 +275,7 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
         url: target.url,
         idPrefix: `FP${index + 1}`,
         sourceType: target.sourceType,
+        researchWindow,
       }),
     ),
   );
@@ -277,10 +289,74 @@ async function scrapeFirstParty(company: ResolvedCompany): Promise<{
     ) {
       throw result.reason;
     } else {
-      gaps.push(`The ${targets[index].label} did not yield usable first-party evidence.`);
+      gaps.push(
+        `The ${targets[index].label} did not yield dated evidence from ${researchWindowLabel(researchWindow)}.`,
+      );
     }
   });
 
+  return { corpus: mergeCorpora(corpora), gaps };
+}
+
+async function scrapeRecentFirstParty(
+  company: ResolvedCompany,
+  researchWindow: ResearchWindow,
+): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
+  // Tavily searches the wider web, while this bounded fallback explicitly checks the
+  // confirmed company's blog, newsroom, and press-release sections for original items.
+  const origin = new URL(company.websiteUrl).origin;
+  const gaps: string[] = [];
+  let mappedLinks: Awaited<ReturnType<typeof mapFirecrawl>> = [];
+
+  try {
+    mappedLinks = await mapFirecrawl({
+      url: origin,
+      search:
+        "recent blog news newsroom press release announcement product launch funding acquisition partnership leadership",
+      limit: 8,
+      includeSubdomains: true,
+    });
+  } catch (error) {
+    if (isProviderClientError(error)) throw error;
+    return {
+      corpus: { sources: [], evidence: [] },
+      gaps: ["The official blog and newsroom could not be mapped for recent items."],
+    };
+  }
+
+  const targetUrls = selectRecentFirstPartyUrls(mappedLinks, company);
+
+  if (targetUrls.length === 0) {
+    return {
+      corpus: { sources: [], evidence: [] },
+      gaps: ["No item-specific company blog, newsroom, or press-release page was discovered."],
+    };
+  }
+
+  const settled = await Promise.allSettled(
+    targetUrls.map((url, index) =>
+      scrapeFirecrawl({
+        url,
+        idPrefix: `RFP${index + 1}`,
+        sourceType: "news",
+        researchWindow,
+      }),
+    ),
+  );
+  const corpora: ResearchCorpus[] = [];
+  settled.forEach((result) => {
+    if (result.status === "fulfilled" && result.value.evidence.length > 0) {
+      corpora.push(result.value);
+    } else if (result.status === "rejected" && isProviderClientError(result.reason)) {
+      throw result.reason;
+    }
+  });
+
+  if (corpora.length === 0) {
+    gaps.push(
+      `The discovered company blog and press items had no usable publication date from ${researchWindowLabel(researchWindow)}.`,
+    );
+  }
   return { corpus: mergeCorpora(corpora), gaps };
 }
 
@@ -317,7 +393,10 @@ async function searchPatterns(
 }
 
 const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => {
-  const { corpus, gaps } = await scrapeFirstParty(state.company);
+  const { corpus, gaps } = await scrapeFirstParty(
+    state.company,
+    state.researchWindow,
+  );
   if (corpus.evidence.length === 0) {
     return { firstPartyCorpus: corpus, firstPartyGaps: gaps };
   }
@@ -328,7 +407,7 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
       strict: true,
     });
     const firstPartyContext = await extraction.invoke(
-      firstPartyMessages(state.company, corpus),
+      firstPartyMessages(state.company, corpus, state.researchWindow),
     );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
@@ -350,11 +429,16 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
 
 const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
-  const { corpus, gaps } = await searchPatterns(
-    recentSignalSearchPlan(company),
-    "REC",
-    "news",
-  );
+  const [searched, firstParty] = await Promise.all([
+    searchPatterns(
+      recentSignalSearchPlan(company, state.researchWindow),
+      "REC",
+      "news",
+    ),
+    scrapeRecentFirstParty(company, state.researchWindow),
+  ]);
+  const corpus = mergeCorpora([searched.corpus, firstParty.corpus]);
+  const gaps = [...searched.gaps, ...firstParty.gaps];
   if (corpus.evidence.length === 0) {
     return {
       recentCorpus: corpus,
@@ -367,7 +451,9 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_recent_signals",
       strict: true,
     });
-    const recentSignals = await extraction.invoke(recentSignalMessages(company, corpus));
+    const recentSignals = await extraction.invoke(
+      recentSignalMessages(company, corpus, state.researchWindow),
+    );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
       recentSignals.signals.map((signal) => signal.claim),
@@ -392,7 +478,7 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
 const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    hiringSignalSearchPlan(company),
+    hiringSignalSearchPlan(company, state.researchWindow),
     "HIR",
     "hiring",
   );
@@ -408,7 +494,9 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_hiring_signals",
       strict: true,
     });
-    const hiringSignals = await extraction.invoke(hiringSignalMessages(company, corpus));
+    const hiringSignals = await extraction.invoke(
+      hiringSignalMessages(company, corpus, state.researchWindow),
+    );
     const selectedCorpus = retainStrongHiringEvidence(corpus, hiringSignals.signals);
     return {
       hiringCorpus: selectedCorpus,
@@ -430,7 +518,7 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
 const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    securitySignalSearchPlan(company),
+    securitySignalSearchPlan(company, state.researchWindow),
     "SEC",
     "security",
   );
@@ -446,7 +534,9 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       name: "extract_security_signals",
       strict: true,
     });
-    const securitySignals = await extraction.invoke(securitySignalMessages(company, corpus));
+    const securitySignals = await extraction.invoke(
+      securitySignalMessages(company, corpus, state.researchWindow),
+    );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
       securitySignals.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
@@ -471,7 +561,7 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
 const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
-    technologySignalSearchPlan(company),
+    technologySignalSearchPlan(company, state.researchWindow),
     "TEC",
     "technology",
   );
@@ -491,7 +581,9 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
       name: "extract_technology_signals",
       strict: true,
     });
-    const technologySignals = await extraction.invoke(technologySignalMessages(company, corpus));
+    const technologySignals = await extraction.invoke(
+      technologySignalMessages(company, corpus, state.researchWindow),
+    );
     const selectedCorpus = retainStrongTechnologyEvidence(corpus, technologySignals.signals);
     return {
       technologyCorpus: selectedCorpus,
@@ -564,7 +656,7 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
         confidenceAndGaps: [...new Set([...nodeGaps, reason])].slice(0, 6),
         sources: corpus.sources,
         evidence: corpus.evidence,
-      });
+      }, state.researchWindow);
     } catch {
       return emptyGroundedReport(
         state.researchId,
@@ -590,6 +682,7 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
     content = await synthesizer.invoke(
       synthesisMessages({
         company: state.company,
+        researchWindow: state.researchWindow,
         corpus,
         classified: {
           firstPartyContext: state.firstPartyResult,
@@ -633,7 +726,9 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
 const validateReportNode: GraphNode<typeof ResearchState> = (state) => {
   if (!state.reportCandidate) throw new Error("Report synthesis did not produce a candidate.");
   try {
-    return { report: restoreGroundedReport(state.reportCandidate) };
+    return {
+      report: restoreGroundedReport(state.reportCandidate, state.researchWindow),
+    };
   } catch {
     return {
       report: emptyGroundedReport(
@@ -683,12 +778,13 @@ export async function runCompanyResearch(
   onProgress?: (update: ResearchProgressUpdate) => void | Promise<void>,
 ): Promise<CompanyReport> {
   assertResearchEnvironment();
+  const researchWindow = createResearchWindow();
   const startedAt = new Map<ResearchStage, number>();
   let report: CompanyReport | undefined;
 
   try {
     const stream = await researchGraph.stream(
-      { researchId, company },
+      { researchId, company, researchWindow },
       {
         configurable: { thread_id: researchId },
         metadata: {

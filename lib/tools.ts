@@ -10,6 +10,10 @@ import {
   type Evidence,
   type Source,
 } from "./schemas";
+import {
+  filterCorpusToResearchWindow,
+  type ResearchWindow,
+} from "./research-window";
 
 const TavilyResponseSchema = z
   .object({
@@ -70,6 +74,7 @@ export type TavilySearchInput = {
   searchDepth?: "basic" | "advanced" | "fast" | "ultra-fast";
   chunksPerSource?: 1 | 2 | 3;
   timeRange?: "day" | "week" | "month" | "year";
+  researchWindow?: ResearchWindow;
   includeDomains?: string[];
   excludeDomains?: string[];
   minimumScore?: number;
@@ -275,6 +280,12 @@ export async function searchTavily(
           ? { chunks_per_source: input.chunksPerSource }
           : {}),
         ...(input.timeRange ? { time_range: input.timeRange } : {}),
+        ...(input.researchWindow
+          ? {
+              start_date: input.researchWindow.oneYearAgo,
+              end_date: input.researchWindow.today,
+            }
+          : {}),
         ...(input.includeDomains ? { include_domains: input.includeDomains } : {}),
         ...(input.excludeDomains ? { exclude_domains: input.excludeDomains } : {}),
       }),
@@ -338,7 +349,12 @@ export async function searchTavily(
     }
   }
 
-  return { sources, evidence };
+  const corpus = { sources, evidence };
+  // Tavily's date parameters narrow retrieval, but local filtering is the enforcement
+  // boundary. Undated, future, and out-of-window results never reach research prompts.
+  return input.researchWindow
+    ? filterCorpusToResearchWindow(corpus, input.researchWindow)
+    : corpus;
 }
 
 export async function mapFirecrawl(
@@ -346,6 +362,7 @@ export async function mapFirecrawl(
     url: string;
     search: string;
     limit?: number;
+    includeSubdomains?: boolean;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<FirecrawlMapLink[]> {
@@ -363,7 +380,7 @@ export async function mapFirecrawl(
         url: input.url,
         search: input.search,
         sitemap: "include",
-        includeSubdomains: false,
+        includeSubdomains: input.includeSubdomains ?? false,
         ignoreQueryParameters: true,
         limit: input.limit ?? 5,
         timeout: 30_000,
@@ -397,6 +414,7 @@ export async function scrapeFirecrawl(
     idPrefix: string;
     sourceType: Source["sourceType"];
     maxAge?: number;
+    researchWindow?: ResearchWindow;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
@@ -454,7 +472,12 @@ export async function scrapeFirecrawl(
     }),
   );
 
-  return { sources: [source], evidence };
+  const corpus = { sources: [source], evidence };
+  // A scraped page qualifies only when its metadata carries a usable date inside the
+  // runtime window. Collection time is not treated as publication time.
+  return input.researchWindow
+    ? filterCorpusToResearchWindow(corpus, input.researchWindow)
+    : corpus;
 }
 
 export function mergeCorpora(corpora: ResearchCorpus[]): ResearchCorpus {

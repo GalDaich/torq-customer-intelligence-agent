@@ -61,12 +61,14 @@ describe("provider normalization", () => {
             url: "https://news.example/acme-specific",
             content: "<chunk 1>Acme announced a specific product launch.</chunk 1>",
             score: 0.83,
+            published_date: "2026-07-15",
           },
           {
             title: "Weak result",
             url: "https://noise.example/acme",
             content: "Weakly related content.",
             score: 0.2,
+            published_date: "2026-07-15",
           },
         ],
       });
@@ -79,7 +81,10 @@ describe("provider normalization", () => {
         sourceType: "news",
         searchDepth: "advanced",
         chunksPerSource: 2,
-        timeRange: "year",
+        researchWindow: {
+          today: "2026-08-01",
+          oneYearAgo: "2025-08-01",
+        },
         excludeDomains: ["noise.example"],
         minimumScore: 0.45,
       },
@@ -89,13 +94,58 @@ describe("provider normalization", () => {
     expect(requestBody).toMatchObject({
       search_depth: "advanced",
       chunks_per_source: 2,
-      time_range: "year",
+      start_date: "2025-08-01",
+      end_date: "2026-08-01",
       exclude_domains: ["noise.example"],
       include_answer: false,
       include_raw_content: false,
     });
     expect(corpus.sources.map((source) => source.title)).toEqual(["Strong specific result"]);
     expect(corpus.evidence[0].excerpt).not.toContain("<chunk");
+  });
+
+  it("drops Tavily results that are undated or outside the exact runtime window", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        results: [
+          {
+            title: "Current announcement",
+            url: "https://news.example/current",
+            content: "Current evidence.",
+            published_date: "2026-01-15",
+          },
+          {
+            title: "Old announcement",
+            url: "https://news.example/old",
+            content: "Old evidence.",
+            published_date: "2021-01-15",
+          },
+          {
+            title: "Undated announcement",
+            url: "https://news.example/undated",
+            content: "Undated evidence.",
+          },
+        ],
+      }),
+    );
+
+    const corpus = await searchTavily(
+      {
+        query: "Acme",
+        idPrefix: "REC1",
+        sourceType: "news",
+        researchWindow: {
+          today: "2026-08-01",
+          oneYearAgo: "2025-08-01",
+        },
+      },
+      { apiKey: "test-key", fetchImpl },
+    );
+
+    expect(corpus.sources.map((source) => source.title)).toEqual([
+      "Current announcement",
+    ]);
+    expect(corpus.evidence).toHaveLength(1);
   });
 
   it("uses Firecrawl map to discover a bounded official-site target set", async () => {
@@ -113,14 +163,19 @@ describe("provider normalization", () => {
     });
 
     const links = await mapFirecrawl(
-      { url: "https://acme.example", search: "products platform", limit: 5 },
+      {
+        url: "https://acme.example",
+        search: "products platform",
+        limit: 5,
+        includeSubdomains: true,
+      },
       { apiKey: "test-key", fetchImpl },
     );
 
     expect(requestBody).toMatchObject({
       search: "products platform",
       sitemap: "include",
-      includeSubdomains: false,
+      includeSubdomains: true,
       ignoreQueryParameters: true,
       limit: 5,
     });
@@ -156,6 +211,34 @@ describe("provider normalization", () => {
       excludeTags: ["nav", "footer", "aside", "form"],
       maxAge: 86_400_000,
     });
+  });
+
+  it("does not treat an undated scraped page as current evidence", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        success: true,
+        data: {
+          markdown:
+            "Acme published a detailed company update with enough text to become a usable extracted paragraph.",
+          metadata: { title: "Acme update", sourceURL: "https://acme.example/update" },
+        },
+      }),
+    );
+
+    const corpus = await scrapeFirecrawl(
+      {
+        url: "https://acme.example/update",
+        idPrefix: "RFP1",
+        sourceType: "news",
+        researchWindow: {
+          today: "2026-08-01",
+          oneYearAgo: "2025-08-01",
+        },
+      },
+      { apiKey: "test-key", fetchImpl },
+    );
+
+    expect(corpus).toEqual({ sources: [], evidence: [] });
   });
 
   it("rejects generic hiring pages before they become evidence", async () => {

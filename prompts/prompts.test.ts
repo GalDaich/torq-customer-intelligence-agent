@@ -15,6 +15,10 @@ const company: ResolvedCompany = {
   websiteUrl: "https://acme.example",
   description: "Acme builds security software.",
 };
+const researchWindow = {
+  today: "2026-08-01",
+  oneYearAgo: "2025-08-01",
+};
 
 const corpus = {
   sources: [{
@@ -23,7 +27,7 @@ const corpus = {
     url: "https://acme.example/jobs/security-engineer-123",
     publisher: "acme.example",
     sourceType: "hiring" as const,
-    publishedAt: null,
+    publishedAt: "2026-07-01",
   }],
   evidence: [{
     id: "E1",
@@ -60,13 +64,14 @@ describe("dedicated prompt modules", () => {
 
   it("gives every research prompt strong-evidence and deduplication rules", () => {
     const prompts = [
-      firstPartyMessages(company, corpus),
-      recentSignalMessages(company, corpus),
-      hiringSignalMessages(company, corpus),
-      securitySignalMessages(company, corpus),
-      technologySignalMessages(company, corpus),
+      firstPartyMessages(company, corpus, researchWindow),
+      recentSignalMessages(company, corpus, researchWindow),
+      hiringSignalMessages(company, corpus, researchWindow),
+      securitySignalMessages(company, corpus, researchWindow),
+      technologySignalMessages(company, corpus, researchWindow),
       synthesisMessages({
         company,
+        researchWindow,
         corpus,
         classified: {
           recentSignals: { signals: [], confidence: "low", gaps: ["None found."] },
@@ -82,6 +87,7 @@ describe("dedicated prompt modules", () => {
       expect(prompt).toContain("item-specific evidence");
       expect(prompt).toContain("single strongest source");
       expect(prompt).toContain("untrusted data");
+      expect(prompt).toContain("publishedAt");
     }
     expect(prompts[2]).toContain("generic careers page");
     expect(prompts[2]).toContain("exactly one evidence ID per role");
@@ -93,5 +99,12 @@ describe("dedicated prompt modules", () => {
     expect(prompts[5]).toContain("return fewer or none");
     expect(prompts[5]).toContain("integration or orchestration surfaces");
     expect(prompts[5]).toContain("1–6 candid");
+  });
+
+  it("provides the exact runtime evidence window to every research prompt", () => {
+    const messages = recentSignalMessages(company, corpus, researchWindow);
+    expect(messages[1].content).toContain('"today": "2026-08-01"');
+    expect(messages[1].content).toContain('"oneYearAgo": "2025-08-01"');
+    expect(systemPrompt(messages)).toContain("company's own blog");
   });
 });
