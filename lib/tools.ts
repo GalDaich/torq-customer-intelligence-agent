@@ -78,6 +78,7 @@ export type TavilySearchInput = {
   includeDomains?: string[];
   excludeDomains?: string[];
   minimumScore?: number;
+  signal?: AbortSignal;
 };
 
 type FirecrawlMapLink = z.infer<typeof FirecrawlMapResponseSchema>["links"][number];
@@ -219,6 +220,14 @@ function assertLangSmithEnvironment(): void {
   if (process.env.LANGSMITH_TRACING !== "true") {
     throw new Error("LANGSMITH_TRACING must be true for traceable LLM operations.");
   }
+  for (const name of [
+    "LANGCHAIN_CALLBACKS_BACKGROUND",
+    "LANGSMITH_TRACING_BACKGROUND",
+  ]) {
+    if (process.env[name] !== "false") {
+      throw new Error(`${name} must be false so serverless trace updates finish.`);
+    }
+  }
 }
 
 function publisherFor(url: string): string {
@@ -265,6 +274,7 @@ export async function searchTavily(
     "https://api.tavily.com/search",
     {
       method: "POST",
+      signal: input.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -363,6 +373,7 @@ export async function mapFirecrawl(
     search: string;
     limit?: number;
     includeSubdomains?: boolean;
+    signal?: AbortSignal;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<FirecrawlMapLink[]> {
@@ -372,6 +383,7 @@ export async function mapFirecrawl(
     "https://api.firecrawl.dev/v2/map",
     {
       method: "POST",
+      signal: input.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -415,6 +427,7 @@ export async function scrapeFirecrawl(
     sourceType: Source["sourceType"];
     maxAge?: number;
     researchWindow?: ResearchWindow;
+    signal?: AbortSignal;
   },
   options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<ResearchCorpus> {
@@ -426,6 +439,7 @@ export async function scrapeFirecrawl(
     "https://api.firecrawl.dev/v2/scrape",
     {
       method: "POST",
+      signal: input.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -532,5 +546,11 @@ export function publicErrorMessage(error: unknown): string {
     return error.message;
   }
   if (error instanceof Error && error.message.startsWith("LANGSMITH_TRACING")) return error.message;
+  if (
+    error instanceof Error &&
+    error.message.startsWith("LANGCHAIN_CALLBACKS_BACKGROUND")
+  ) {
+    return error.message;
+  }
   return "Research failed at a protected provider or validation boundary.";
 }

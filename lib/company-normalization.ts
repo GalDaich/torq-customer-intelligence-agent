@@ -1,4 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
+import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { z } from "zod";
 import { companyIdentityNormalizationMessages } from "../prompts/company-identity-normalization";
 import type { CompanyCandidate } from "./schemas";
@@ -91,7 +92,7 @@ export async function normalizeCompanyCandidates(
     const normalizer = new ChatOpenAI({
       apiKey: requireServerEnv("OPENAI_API_KEY"),
       model: requireServerEnv("OPENAI_MODEL"),
-      maxRetries: 1,
+      maxRetries: 0,
       timeout: 45_000,
     }).withStructuredOutput(CandidateIdentityBatchSchema, {
       name: operation,
@@ -107,5 +108,9 @@ export async function normalizeCompanyCandidates(
     throw new ProtectedBoundaryError(
       "Company identity normalization failed; unnormalized search text was not used.",
     );
+  } finally {
+    // LangSmith submits callbacks in the background by default. Explicitly drain the
+    // shared queue before a serverless resolution request can be suspended.
+    await awaitAllCallbacks();
   }
 }

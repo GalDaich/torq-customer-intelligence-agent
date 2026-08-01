@@ -152,4 +152,28 @@ describe("independent research execution", () => {
       response: { failures: [] },
     });
   });
+
+  it("aborts in-flight company work when the browser cancels the stream", async () => {
+    let observedSignal: AbortSignal | undefined;
+    const runner = vi.fn(
+      async (
+        _researchId: string,
+        _company: ResolvedCompany,
+        _onProgress?: unknown,
+        signal?: AbortSignal,
+      ): Promise<CompanyReport> => {
+        observedSignal = signal;
+        return await new Promise<CompanyReport>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      },
+    );
+
+    const reader = createResearchStream([companies[0]], runner).getReader();
+    await vi.waitFor(() => expect(runner).toHaveBeenCalledOnce());
+    await reader.cancel();
+    await vi.waitFor(() => expect(observedSignal?.aborted).toBe(true));
+  });
 });

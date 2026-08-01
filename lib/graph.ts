@@ -1,4 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
+import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import {
   END,
   START,
@@ -55,6 +56,7 @@ import {
   isProviderClientError,
   mapFirecrawl,
   mergeCorpora,
+  ProtectedBoundaryError,
   requireServerEnv,
   scrapeFirecrawl,
   searchTavily,
@@ -63,6 +65,13 @@ import {
 
 // One graph represents one confirmed company. Five specialist branches collect and
 // classify evidence in parallel before a separate synthesis and deterministic validation.
+
+export const RESEARCH_RUN_DEADLINE_MS = 240_000;
+export const RESEARCH_MODEL_LIMITS = {
+  specialistTimeoutMs: 60_000,
+  synthesisTimeoutMs: 60_000,
+  maxRetries: 0,
+} as const;
 
 const ResearchCorpusSchema = z
   .object({
@@ -217,18 +226,23 @@ function withStageBoundary(
   };
 }
 
-function model() {
+function model(options: { timeout?: number; maxRetries?: number } = {}) {
   return new ChatOpenAI({
     apiKey: requireServerEnv("OPENAI_API_KEY"),
     model: requireServerEnv("OPENAI_MODEL"),
-    maxRetries: 1,
-    timeout: 90_000,
+    maxRetries: options.maxRetries ?? RESEARCH_MODEL_LIMITS.maxRetries,
+    timeout: options.timeout ?? RESEARCH_MODEL_LIMITS.specialistTimeoutMs,
   });
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
 }
 
 async function scrapeFirstParty(
   company: ResolvedCompany,
   researchWindow: ResearchWindow,
+  signal?: AbortSignal,
 ): Promise<{
   corpus: ResearchCorpus;
   gaps: string[];
@@ -244,8 +258,10 @@ async function scrapeFirstParty(
       url: origin,
       search: "company overview products platform solutions about",
       limit: 5,
+      signal,
     });
   } catch (error) {
+    throwIfAborted(signal);
     if (isProviderClientError(error)) {
       throw error;
     }
@@ -276,9 +292,11 @@ async function scrapeFirstParty(
         idPrefix: `FP${index + 1}`,
         sourceType: target.sourceType,
         researchWindow,
+        signal,
       }),
     ),
   );
+  throwIfAborted(signal);
   const corpora: ResearchCorpus[] = [];
   settled.forEach((result, index) => {
     if (result.status === "fulfilled" && result.value.evidence.length > 0) {
@@ -301,6 +319,7 @@ async function scrapeFirstParty(
 async function scrapeRecentFirstParty(
   company: ResolvedCompany,
   researchWindow: ResearchWindow,
+  signal?: AbortSignal,
 ): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
   // Tavily searches the wider web, while this bounded fallback explicitly checks the
   // confirmed company's blog, newsroom, and press-release sections for original items.
@@ -315,8 +334,10 @@ async function scrapeRecentFirstParty(
         "recent blog news newsroom press release announcement product launch funding acquisition partnership leadership",
       limit: 8,
       includeSubdomains: true,
+      signal,
     });
   } catch (error) {
+    throwIfAborted(signal);
     if (isProviderClientError(error)) throw error;
     return {
       corpus: { sources: [], evidence: [] },
@@ -340,9 +361,11 @@ async function scrapeRecentFirstParty(
         idPrefix: `RFP${index + 1}`,
         sourceType: "news",
         researchWindow,
+        signal,
       }),
     ),
   );
+  throwIfAborted(signal);
   const corpora: ResearchCorpus[] = [];
   settled.forEach((result) => {
     if (result.status === "fulfilled" && result.value.evidence.length > 0) {
@@ -364,6 +387,7 @@ async function searchPatterns(
   patterns: FocusedSearchPlan[],
   prefix: string,
   sourceType: "news" | "hiring" | "security" | "technology",
+  signal?: AbortSignal,
 ): Promise<{ corpus: ResearchCorpus; gaps: string[] }> {
   // Search calls within a specialist run together. Expected server/network failures become
   // gaps, while provider 4xx responses remain blocking because the request was rejected.
@@ -373,9 +397,11 @@ async function searchPatterns(
         ...pattern,
         idPrefix: `${prefix}${index + 1}`,
         sourceType,
+        signal,
       }),
     ),
   );
+  throwIfAborted(signal);
   const corpora: ResearchCorpus[] = [];
   const gaps: string[] = [];
 
@@ -392,10 +418,11 @@ async function searchPatterns(
   return { corpus: mergeCorpora(corpora), gaps };
 }
 
-const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => {
+const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state, config) => {
   const { corpus, gaps } = await scrapeFirstParty(
     state.company,
     state.researchWindow,
+    config?.signal,
   );
   if (corpus.evidence.length === 0) {
     return { firstPartyCorpus: corpus, firstPartyGaps: gaps };
@@ -408,6 +435,7 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
     });
     const firstPartyContext = await extraction.invoke(
       firstPartyMessages(state.company, corpus, state.researchWindow),
+      config,
     );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
@@ -419,6 +447,7 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
       firstPartyGaps: gaps,
     };
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       firstPartyCorpus: { sources: [], evidence: [] },
@@ -427,15 +456,16 @@ const firstPartyContextNode: GraphNode<typeof ResearchState> = async (state) => 
   }
 };
 
-const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
+const recentSignalsNode: GraphNode<typeof ResearchState> = async (state, config) => {
   const { company } = state;
   const [searched, firstParty] = await Promise.all([
     searchPatterns(
       recentSignalSearchPlan(company, state.researchWindow),
       "REC",
       "news",
+      config?.signal,
     ),
-    scrapeRecentFirstParty(company, state.researchWindow),
+    scrapeRecentFirstParty(company, state.researchWindow, config?.signal),
   ]);
   const corpus = mergeCorpora([searched.corpus, firstParty.corpus]);
   const gaps = [...searched.gaps, ...firstParty.gaps];
@@ -453,6 +483,7 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     });
     const recentSignals = await extraction.invoke(
       recentSignalMessages(company, corpus, state.researchWindow),
+      config,
     );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
@@ -463,6 +494,7 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       recentResult: { ...recentSignals, gaps: [...gaps, ...recentSignals.gaps] },
     };
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       recentCorpus: { sources: [], evidence: [] },
@@ -475,12 +507,13 @@ const recentSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   }
 };
 
-const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
+const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state, config) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
     hiringSignalSearchPlan(company, state.researchWindow),
     "HIR",
     "hiring",
+    config?.signal,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -496,6 +529,7 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     });
     const hiringSignals = await extraction.invoke(
       hiringSignalMessages(company, corpus, state.researchWindow),
+      config,
     );
     const selectedCorpus = retainStrongHiringEvidence(corpus, hiringSignals.signals);
     return {
@@ -503,6 +537,7 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       hiringResult: { ...hiringSignals, gaps: [...gaps, ...hiringSignals.gaps] },
     };
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       hiringCorpus: { sources: [], evidence: [] },
@@ -515,12 +550,13 @@ const hiringSignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   }
 };
 
-const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
+const securitySignalsNode: GraphNode<typeof ResearchState> = async (state, config) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
     securitySignalSearchPlan(company, state.researchWindow),
     "SEC",
     "security",
+    config?.signal,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -536,6 +572,7 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
     });
     const securitySignals = await extraction.invoke(
       securitySignalMessages(company, corpus, state.researchWindow),
+      config,
     );
     const selectedCorpus = retainEvidenceForClaims(
       corpus,
@@ -546,6 +583,7 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
       securityResult: { ...securitySignals, gaps: [...gaps, ...securitySignals.gaps] },
     };
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       securityCorpus: { sources: [], evidence: [] },
@@ -558,12 +596,13 @@ const securitySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
   }
 };
 
-const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => {
+const technologySignalsNode: GraphNode<typeof ResearchState> = async (state, config) => {
   const { company } = state;
   const { corpus, gaps } = await searchPatterns(
     technologySignalSearchPlan(company, state.researchWindow),
     "TEC",
     "technology",
+    config?.signal,
   );
   if (corpus.evidence.length === 0) {
     return {
@@ -583,6 +622,7 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
     });
     const technologySignals = await extraction.invoke(
       technologySignalMessages(company, corpus, state.researchWindow),
+      config,
     );
     const selectedCorpus = retainStrongTechnologyEvidence(corpus, technologySignals.signals);
     return {
@@ -590,6 +630,7 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
       technologyResult: { ...technologySignals, gaps: [...gaps, ...technologySignals.gaps] },
     };
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       technologyCorpus: { sources: [], evidence: [] },
@@ -602,7 +643,7 @@ const technologySignalsNode: GraphNode<typeof ResearchState> = async (state) => 
   }
 };
 
-const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
+const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state, config) => {
   // Synthesis sees only evidence retained by the specialist classifiers, never the full
   // raw result set returned by Tavily or Firecrawl.
   const corpus = mergeCorpora([
@@ -673,7 +714,10 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
       ),
     };
   }
-  const synthesizer = model().withStructuredOutput(ReportContentSchema, {
+  const synthesizer = model({
+    timeout: RESEARCH_MODEL_LIMITS.synthesisTimeoutMs,
+    maxRetries: RESEARCH_MODEL_LIMITS.maxRetries,
+  }).withStructuredOutput(ReportContentSchema, {
     name: "synthesize_customer_intelligence_report",
     strict: true,
   });
@@ -693,8 +737,10 @@ const synthesizeReportNode: GraphNode<typeof ResearchState> = async (state) => {
         },
         nodeGaps,
       }),
+      config,
     );
   } catch (error) {
+    throwIfAborted(config?.signal);
     if (isProviderClientError(error)) throw error;
     return {
       reportCandidate: partialReport(
@@ -776,10 +822,23 @@ export async function runCompanyResearch(
   researchId: string,
   company: ResolvedCompany,
   onProgress?: (update: ResearchProgressUpdate) => void | Promise<void>,
+  externalSignal?: AbortSignal,
 ): Promise<CompanyReport> {
   assertResearchEnvironment();
   const researchWindow = createResearchWindow();
   const startedAt = new Map<ResearchStage, number>();
+  const deadlineController = new AbortController();
+  const deadlineTimer = setTimeout(() => {
+    deadlineController.abort(
+      new ProtectedBoundaryError(
+        "Research reached its four-minute safety deadline; completed companies and stages remain visible.",
+      ),
+    );
+  }, RESEARCH_RUN_DEADLINE_MS);
+  deadlineTimer.unref();
+  const signal = externalSignal
+    ? AbortSignal.any([externalSignal, deadlineController.signal])
+    : deadlineController.signal;
   let report: CompanyReport | undefined;
 
   try {
@@ -794,6 +853,7 @@ export async function runCompanyResearch(
         },
         tags: ["customer-intelligence", `research:${researchId}`],
         streamMode: "tasks",
+        signal,
       },
     );
 
@@ -842,6 +902,11 @@ export async function runCompanyResearch(
       throw error.originalError;
     }
     throw error;
+  } finally {
+    clearTimeout(deadlineTimer);
+    // Root graph completion is the last trace update. Drain callbacks before Vercel can
+    // suspend the function so completed and failed runs never remain falsely pending.
+    await awaitAllCallbacks();
   }
 
   if (!report) throw new Error("Research graph completed without a validated report.");

@@ -36,6 +36,8 @@ Fill in `.env.local`, then open [http://localhost:3000](http://localhost:3000). 
 | `LANGSMITH_API_KEY` | Authenticates LangSmith |
 | `LANGSMITH_PROJECT` | Groups the application's traces |
 | `LANGSMITH_ENDPOINT` | LangSmith API endpoint for the selected region |
+| `LANGCHAIN_CALLBACKS_BACKGROUND=false` | Waits for LangChain trace updates before a serverless run finishes |
+| `LANGSMITH_TRACING_BACKGROUND=false` | Prevents pending LangSmith batches from being abandoned by the runtime |
 
 ## Commands
 
@@ -50,7 +52,7 @@ npm start          # serve the production build
 
 I kept this submission to Level 1. There is no account system, database, watchlist, scheduled refresh, or change feed. Company selections live in the browser and disappear on refresh.
 
-The research flow uses bounded Tavily searches and targeted Firecrawl extraction. Undated, older, and future sources are removed before they reach the model. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to in-window evidence and real source URLs.
+The research flow uses bounded Tavily searches and targeted Firecrawl extraction. Undated, older, and future sources are removed before they reach the model. LangGraph keeps each company's research independent, OpenAI handles structured analysis and synthesis, and deterministic validation checks that report claims point back to in-window evidence and real source URLs. Model attempts do not retry, final synthesis falls back to grounded specialist findings after its deadline, and the whole company run stops safely before Vercel's function limit.
 
 The two additional submission files are:
 

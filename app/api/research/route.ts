@@ -29,14 +29,38 @@ type ProgressRunner = (
   researchId: string,
   company: ResolvedCompany,
   onProgress?: (update: ResearchProgressUpdate) => void | Promise<void>,
+  signal?: AbortSignal,
 ) => Promise<CompanyReport>;
+
+type ResearchStreamContext = {
+  requestId?: string | null;
+};
+
+function logResearchEvent(
+  level: "info" | "warn" | "error",
+  message: string,
+  fields: Record<string, unknown>,
+): void {
+  console[level](
+    JSON.stringify({ level, message, route: "/api/research", ...fields }),
+  );
+}
+
+function errorLogFields(error: unknown): Record<string, string> {
+  return error instanceof Error
+    ? { errorName: error.name, errorMessage: error.message }
+    : { errorName: "UnknownError", errorMessage: "A non-Error value was thrown." };
+}
 
 export function createResearchStream(
   companies: ResearchInput[],
   runner: ProgressRunner = runCompanyResearch,
+  context: ResearchStreamContext = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const batchId = randomUUID();
+  const startedAt = Date.now();
+  const abortController = new AbortController();
   const totalSteps = companies.length * RESEARCH_STAGES.length;
   let completedSteps = 0;
   let sequence = 0;
@@ -44,8 +68,15 @@ export function createResearchStream(
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const emit = (event: unknown) => {
+        if (abortController.signal.aborted) return;
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
+
+      logResearchEvent("info", "Research batch started.", {
+        batchId,
+        requestId: context.requestId ?? null,
+        companyCount: companies.length,
+      });
 
       void (async () => {
         try {
@@ -57,6 +88,18 @@ export function createResearchStream(
                 const report = await runner(researchId, company, async (update) => {
                   if (update.status === "completed" || update.status === "failed") {
                     completedSteps += 1;
+                    logResearchEvent(
+                      update.status === "failed" ? "warn" : "info",
+                      `Research stage ${update.status}.`,
+                      {
+                        batchId,
+                        requestId: context.requestId ?? null,
+                        researchId,
+                        companyName: company.name,
+                        stage: update.stage,
+                        durationMs: update.durationMs,
+                      },
+                    );
                   }
                   const event = ResearchProgressEventSchema.parse({
                     type: "progress",
@@ -70,7 +113,7 @@ export function createResearchStream(
                     totalSteps,
                   });
                   emit(event);
-                });
+                }, abortController.signal);
                 return { report } as const;
               } catch (error) {
                 const failure = {
@@ -78,6 +121,14 @@ export function createResearchStream(
                   companyName: company.name,
                   message: publicErrorMessage(error),
                 };
+                logResearchEvent("warn", "Company research failed safely.", {
+                  batchId,
+                  requestId: context.requestId ?? null,
+                  researchId,
+                  companyName: company.name,
+                  message: failure.message,
+                  ...errorLogFields(error),
+                });
                 return { failure } as const;
               }
             }),
@@ -97,6 +148,13 @@ export function createResearchStream(
               response,
             }),
           );
+          logResearchEvent("info", "Research batch completed.", {
+            batchId,
+            requestId: context.requestId ?? null,
+            durationMs: Date.now() - startedAt,
+            reportCount: response.reports.length,
+            failureCount: response.failures.length,
+          });
         } catch (error) {
           const message = publicErrorMessage(error);
           emit(
@@ -108,10 +166,25 @@ export function createResearchStream(
               message,
             }),
           );
+          logResearchEvent("error", "Research batch failed.", {
+            batchId,
+            requestId: context.requestId ?? null,
+            durationMs: Date.now() - startedAt,
+            message,
+            ...errorLogFields(error),
+          });
         } finally {
-          controller.close();
+          if (!abortController.signal.aborted) controller.close();
         }
       })();
+    },
+    cancel() {
+      abortController.abort(new Error("The research client disconnected."));
+      logResearchEvent("warn", "Research stream cancelled by the client.", {
+        batchId,
+        requestId: context.requestId ?? null,
+        durationMs: Date.now() - startedAt,
+      });
     },
   });
 }
@@ -121,13 +194,18 @@ export async function POST(request: Request) {
     // The response stays open as NDJSON so the browser can render actual graph events
     // instead of guessing progress with a timer.
     const body = ResearchRequestSchema.parse(await request.json());
-    return new Response(createResearchStream(body.companies), {
-      headers: {
-        "Cache-Control": "no-cache, no-store",
-        "Content-Type": "application/x-ndjson; charset=utf-8",
-        "X-Accel-Buffering": "no",
+    return new Response(
+      createResearchStream(body.companies, runCompanyResearch, {
+        requestId: request.headers.get("x-vercel-id"),
+      }),
+      {
+        headers: {
+          "Cache-Control": "no-cache, no-store",
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "X-Accel-Buffering": "no",
+        },
       },
-    });
+    );
   } catch (error) {
     const status = error instanceof ZodError ? 400 : 500;
     return Response.json(
