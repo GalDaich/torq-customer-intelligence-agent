@@ -13,3 +13,6 @@ npm-debug.log*
 .agents/
 .claude/
 skills-lock.json
+
+# Notes kept locally for interview preparation, not part of the submission.
+.interview-prep/

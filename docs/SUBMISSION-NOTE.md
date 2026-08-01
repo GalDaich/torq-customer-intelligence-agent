@@ -1,11 +1,17 @@
-# Architecture and build note
+# Build note
 
-The product is a Next.js application, runnable locally and deployed on Vercel, because the assignment needs a browser experience for non-technical AEs and CSMs without separate services. The browser owns company input, mandatory identity confirmation, progress, and report presentation. Server routes keep credentials private and separate company discovery from research authorization.
+## Why I chose this stack
 
-Each confirmed company receives a UUID and an independent LangGraph run. Five parallel specialists research first-party context, recent events, hiring, explicit security signals, and named technologies. Firecrawl extracts a small set of pages from the confirmed site; Tavily performs bounded open-web searches. Specialist LLM calls select typed evidence, and a separate synthesis call writes the report. Deterministic code then validates every claim-to-evidence-to-source path, rejects generic or duplicate evidence, and never manufactures fallback findings.
+I built the product as one Next.js application so the UI and server-side provider calls stay in the same project. The browser handles company input, website confirmation, progress, and report display. API keys and external requests stay in server routes.
 
-This composition is easy to explain and inspect: Next.js provides the product and server boundary, Tavily handles discovery, Firecrawl handles extraction, LangGraph makes parallel stages explicit, OpenAI provides structured analysis, and LangSmith provides observability without application logging.
+Each confirmed company gets its own LangGraph run. Five research steps run in parallel: company context, recent events, hiring, security signals, and named technologies. Tavily handles focused web search, while Firecrawl extracts a small number of pages from the confirmed company site. OpenAI classifies the evidence and writes the final report. LangSmith is used to inspect the model and graph runs.
 
-With another week, I would finish the complete live acceptance matrix, tune retrieval from observed traces, add persisted Level 2 watchlists and real change detection, and evaluate durable background execution beyond the current demo.
+I did not rely on the model alone for grounding. The code checks that every cited claim points to evidence returned by the research tools and that the evidence points to a real source URL. It also removes unsupported or repeated findings.
 
-AI coding tools accelerated implementation, test generation, prompt review, and documentation. Human judgment remained responsible for scope, provider roles, evidence quality, Torq relevance boundaries, UX decisions, and rejecting outputs that looked plausible but were not sufficiently grounded.
+## What I would add with another week
+
+I would test a wider mix of companies, tune the searches from those traces, and add the optional Level 2 watchlist with stored reports and real change detection. I would also move longer research jobs out of a single browser request.
+
+## Where AI helped
+
+I used AI coding tools to speed up implementation, tests, prompt iteration, and code review. I made the product and scope decisions, chose the provider boundaries, reviewed the UX, and rejected research outputs that sounded useful but were not supported well enough.
