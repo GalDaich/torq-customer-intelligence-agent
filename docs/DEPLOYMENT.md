@@ -4,6 +4,8 @@
 
 - Public URL: [https://torq-demo.galdaich.com](https://torq-demo.galdaich.com)
 - Vercel project: `gal-daichs-projects/torq-customer-intelligence-agent`
+- GitHub source: [GalDaich/torq-customer-intelligence-agent](https://github.com/GalDaich/torq-customer-intelligence-agent)
+- Production branch: `main`
 - Framework preset: Next.js
 - Vercel Node.js version: 24.x
 - Research Function limit: 300 seconds, declared in `app/api/research/route.ts`
@@ -46,7 +48,13 @@ This proves one hosted happy path. It does not replace the remaining five-compan
 
 ## Redeployment
 
-This checkout is linked locally through the ignored `.vercel/` folder. With an authenticated Vercel CLI:
+Vercel's GitHub integration creates a production deployment whenever a commit reaches `main`. Pushes to other branches create preview deployments, so the normal release path is:
+
+```bash
+git push origin main
+```
+
+This checkout is also linked locally through the ignored `.vercel/` folder. An authenticated project owner can deploy the current checkout directly as a fallback:
 
 ```bash
 vercel deploy --prod --scope gal-daichs-projects
