@@ -31,6 +31,7 @@ type Props = {
 export function CompanyTagInput({ companies, onChange, disabled = false }: Props) {
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState("");
+  const atLimit = companies.length >= 5;
 
   function addTokens(raw: string) {
     const parsed = parseCompanyTokens(companies, raw);
@@ -80,17 +81,21 @@ export function CompanyTagInput({ companies, onChange, disabled = false }: Props
         <input
           id="company-input"
           value={draft}
-          disabled={disabled || companies.length >= 5}
+          disabled={disabled || atLimit}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           onBlur={commitDraft}
-          placeholder={companies.length === 0 ? "Company name or domain" : "Add another"}
+          placeholder={atLimit ? "" : companies.length === 0 ? "Company name or domain" : "Add another"}
           autoComplete="off"
         />
       </div>
       <div className="input-support">
-        <span>{message || "Enter a company name or domain. Press Enter or comma to add."}</span>
+        <span>
+          {message || (atLimit
+            ? "Remove a company to add a different one."
+            : "Enter a company name or domain. Press Enter or comma to add.")}
+        </span>
         <span>{companies.length}/5</span>
       </div>
     </div>

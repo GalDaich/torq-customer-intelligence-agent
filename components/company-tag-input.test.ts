@@ -1,5 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { parseCompanyTokens } from "./company-tag-input";
+import { CompanyTagInput, parseCompanyTokens } from "./company-tag-input";
 
 describe("company tag parsing", () => {
   it("parses comma and newline separated values", () => {
@@ -15,5 +17,18 @@ describe("company tag parsing", () => {
       companies: ["Acme", "B", "C", "D", "E"],
       overflowCount: 1,
     });
+  });
+
+  it("removes the add-another prompt at the five-company limit", () => {
+    const html = renderToStaticMarkup(
+      createElement(CompanyTagInput, {
+        companies: ["Microsoft", "Google", "Nvidia", "Meta", "SpaceX"],
+        onChange: () => undefined,
+      }),
+    );
+
+    expect(html).not.toContain("Add another");
+    expect(html).toContain("Remove a company to add a different one.");
+    expect(html).toContain("5/5");
   });
 });
